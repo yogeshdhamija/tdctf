@@ -10,9 +10,18 @@ OUT := build/index.html
 EMFLAGS := -O2 -s WASM=1 --shell-file $(SHELL_HTML) \
            -s EXPORTED_RUNTIME_METHODS=UTF8ToString
 
-.PHONY: all clean serve setup
+TEST_BIN := build/test_pathing
+TEST_SRCS := tests/test_pathing.c src/game/game.c
+
+.PHONY: all clean serve setup test
 
 all: $(OUT)
+
+test: $(TEST_BIN)
+	$(TEST_BIN)
+
+$(TEST_BIN): $(TEST_SRCS) src/game/game.h | build
+	cc -O0 -g -Wall -Wextra -Isrc $(TEST_SRCS) -o $(TEST_BIN)
 
 $(OUT): $(SRCS) $(SHELL_HTML) | build
 	source $(EMSDK_ENV) > /dev/null 2>&1 && emcc $(SRCS) -o $(OUT) $(EMFLAGS) -Isrc

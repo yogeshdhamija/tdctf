@@ -69,12 +69,6 @@ static int walkable(int x, int y) {
     return 1;
 }
 
-static int walkable_for(int x, int y, int sx, int sy, int gx, int gy) {
-    if (!in_bounds(x, y)) return 0;
-    if ((x == sx && y == sy) || (x == gx && y == gy)) return 1;
-    return walkable(x, y);
-}
-
 static int tower_at(int x, int y) {
     if (!in_bounds(x, y)) return -1;
     int id = s.grid[x][y].thing_id;
@@ -98,17 +92,32 @@ static void set_status(const char *msg) {
 
 /* ── BFS pathfinding ────────────────────────────────────── */
 
-/* parent[x][y] = (py * W + px) + 1; 0 means unvisited */
-static int   bfs_parent[MAX_GRID_W][MAX_GRID_H];
-static int   bfs_qx[MAX_GRID_W * MAX_GRID_H];
-static int   bfs_qy[MAX_GRID_W * MAX_GRID_H];
+/* Creep pathing per design.md §10: "take the shortest unblocked path to any
+ * point on the line that's ahead of the furthest point you've already visited."
+ * Implementation: callers fill bfs_goal[][] with the set of acceptable target
+ * cells, then bfs_step finds the shortest path from (sx,sy) to any of them and
+ * returns the first step. For outbound creeps the goal set is all path cells
+ * with index > path_progress; for inbound (carrying flag) the goal is just
+ * the receptacle; for placement validation it's just the enemy flag cell. */
+static int     bfs_parent[MAX_GRID_W][MAX_GRID_H];
+static int     bfs_qx[MAX_GRID_W * MAX_GRID_H];
+static int     bfs_qy[MAX_GRID_W * MAX_GRID_H];
+static uint8_t bfs_goal[MAX_GRID_W][MAX_GRID_H];
 
-/* Direction order biased so that, when ties occur, BFS expands toward path_y
- * first, then toward the goal in x. This makes diverted creeps return to the
- * default lane as soon as it reopens, instead of riding the detour. */
-static int bfs(int sx, int sy, int gx, int gy, int path_y, int *step_x, int *step_y) {
-    if (!in_bounds(sx, sy) || !in_bounds(gx, gy)) return 0;
-    if (sx == gx && sy == gy) {
+static void bfs_clear_goals(void) {
+    for (int x = 0; x < s.grid_w; x++)
+        for (int y = 0; y < s.grid_h; y++)
+            bfs_goal[x][y] = 0;
+}
+
+static void bfs_set_path_forward(PlayerID p, int from_idx) {
+    for (int i = from_idx + 1; i < s.path_len[p]; i++)
+        bfs_goal[s.path_x[p][i]][s.path_y[p][i]] = 1;
+}
+
+static int bfs_step(int sx, int sy, int *step_x, int *step_y) {
+    if (!in_bounds(sx, sy)) return 0;
+    if (bfs_goal[sx][sy]) {
         if (step_x) { *step_x = sx; *step_y = sy; }
         return 1;
     }
@@ -119,30 +128,17 @@ static int bfs(int sx, int sy, int gx, int gy, int path_y, int *step_x, int *ste
     int qh = 0, qt = 0;
     bfs_qx[qt] = sx; bfs_qy[qt] = sy; qt++;
     bfs_parent[sx][sy] = sy * W + sx + 1;
-
-    int x_dir = (gx > sx) ? 1 : (gx < sx ? -1 : 0);
-
+    static const int DX[4] = { 1, -1, 0,  0 };
+    static const int DY[4] = { 0,  0, 1, -1 };
     while (qh < qt) {
         int cx = bfs_qx[qh], cy = bfs_qy[qh]; qh++;
-
-        int y_pref = (cy > path_y) ? -1 : (cy < path_y ? 1 : 0);
-        int DX[4], DY[4], n = 0;
-        if (y_pref) { DX[n] = 0;     DY[n] = y_pref;  n++; }
-        if (x_dir)  { DX[n] = x_dir; DY[n] = 0;       n++;
-                      DX[n] = -x_dir;DY[n] = 0;       n++; }
-        else        { DX[n] = 1;     DY[n] = 0;       n++;
-                      DX[n] = -1;    DY[n] = 0;       n++; }
-        if (y_pref) { DX[n] = 0;     DY[n] = -y_pref; n++; }
-        else        { DX[n] = 0;     DY[n] = 1;       n++;
-                      DX[n] = 0;     DY[n] = -1;      n++; }
-
-        for (int i = 0; i < n; i++) {
+        for (int i = 0; i < 4; i++) {
             int nx = cx + DX[i], ny = cy + DY[i];
             if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
             if (bfs_parent[nx][ny]) continue;
-            if (!walkable_for(nx, ny, sx, sy, gx, gy)) continue;
+            if (!walkable(nx, ny)) continue;
             bfs_parent[nx][ny] = cy * W + cx + 1;
-            if (nx == gx && ny == gy) {
+            if (bfs_goal[nx][ny]) {
                 int rx = nx, ry = ny;
                 while (1) {
                     int p  = bfs_parent[rx][ry] - 1;
@@ -161,12 +157,13 @@ static int bfs(int sx, int sy, int gx, int gy, int path_y, int *step_x, int *ste
 }
 
 static int paths_valid(void) {
-    return bfs(s.receptacle_x[PLAYER_RED],  s.receptacle_y[PLAYER_RED],
-               s.flags[PLAYER_BLUE].x,      s.flags[PLAYER_BLUE].y,
-               s.path_y[PLAYER_RED][0],     NULL, NULL) &&
-           bfs(s.receptacle_x[PLAYER_BLUE], s.receptacle_y[PLAYER_BLUE],
-               s.flags[PLAYER_RED].x,       s.flags[PLAYER_RED].y,
-               s.path_y[PLAYER_BLUE][0],    NULL, NULL);
+    for (int p = 0; p < 2; p++) {
+        PlayerID enemy = (p == PLAYER_RED) ? PLAYER_BLUE : PLAYER_RED;
+        bfs_clear_goals();
+        bfs_goal[s.flags[enemy].x][s.flags[enemy].y] = 1;
+        if (!bfs_step(s.receptacle_x[p], s.receptacle_y[p], NULL, NULL)) return 0;
+    }
+    return 1;
 }
 
 /* ── Creep upgrade init ─────────────────────────────────── */
@@ -237,17 +234,25 @@ void game_init(void) {
     s.flags[PLAYER_BLUE].carried_by = -1;
     s.flags[PLAYER_BLUE].at_home    = 1;
 
-    s.path_len[PLAYER_RED] = 2;
-    s.path_x[PLAYER_RED][0] = s.receptacle_x[PLAYER_RED];
-    s.path_y[PLAYER_RED][0] = s.receptacle_y[PLAYER_RED];
-    s.path_x[PLAYER_RED][1] = s.flags[PLAYER_BLUE].x;
-    s.path_y[PLAYER_RED][1] = s.flags[PLAYER_BLUE].y;
-
-    s.path_len[PLAYER_BLUE] = 2;
-    s.path_x[PLAYER_BLUE][0] = s.receptacle_x[PLAYER_BLUE];
-    s.path_y[PLAYER_BLUE][0] = s.receptacle_y[PLAYER_BLUE];
-    s.path_x[PLAYER_BLUE][1] = s.flags[PLAYER_RED].x;
-    s.path_y[PLAYER_BLUE][1] = s.flags[PLAYER_RED].y;
+    /* Demarcated path: a cell-by-cell L-shaped line from receptacle to enemy
+     * flag. Visible to both players (render walks consecutive points) and used
+     * as the goal set for creep pathing per design.md §10. */
+    for (int p = 0; p < 2; p++) {
+        PlayerID enemy = (p == PLAYER_RED) ? PLAYER_BLUE : PLAYER_RED;
+        int x = s.receptacle_x[p], y = s.receptacle_y[p];
+        int gx = s.flags[enemy].x, gy = s.flags[enemy].y;
+        int n = 0;
+        s.path_x[p][n] = x; s.path_y[p][n] = y; n++;
+        while (x != gx && n < MAX_PATH) {
+            x += (gx > x) ? 1 : -1;
+            s.path_x[p][n] = x; s.path_y[p][n] = y; n++;
+        }
+        while (y != gy && n < MAX_PATH) {
+            y += (gy > y) ? 1 : -1;
+            s.path_x[p][n] = x; s.path_y[p][n] = y; n++;
+        }
+        s.path_len[p] = n;
+    }
 }
 
 /* ── Planning actions ───────────────────────────────────── */
@@ -408,29 +413,35 @@ static void start_simulation(void) {
 }
 
 static void sim_one_tick(void) {
-    /* Move creeps */
+    /* Move creeps. Outbound goal set is "any cell on the line ahead of the
+     * furthest path index this creep has touched" (design.md §10). Inbound
+     * just heads to the home receptacle. */
     for (int i = 0; i < s.thing_count; i++) {
         Thing *t = &s.things[i];
         if (t->tag != THING_CREEP || !t->alive) continue;
         if (t->creep.slow_ticks > 0) { t->creep.slow_ticks--; continue; }
-        int tx, ty;
+        bfs_clear_goals();
         if (t->creep.has_flag) {
-            tx = s.receptacle_x[t->owner];
-            ty = s.receptacle_y[t->owner];
+            bfs_goal[s.receptacle_x[t->owner]][s.receptacle_y[t->owner]] = 1;
         } else {
-            PlayerID enemy = (t->owner == PLAYER_RED) ? PLAYER_BLUE : PLAYER_RED;
-            tx = s.flags[enemy].x;
-            ty = s.flags[enemy].y;
+            bfs_set_path_forward(t->owner, t->creep.path_progress);
         }
         int nx = t->x, ny = t->y;
-        if (bfs(t->x, t->y, tx, ty, s.path_y[t->owner][0], &nx, &ny)) {
-            t->x = nx; t->y = ny;
-            if (t->creep.has_flag) {
-                for (int k = 0; k < 2; k++)
-                    if (s.flags[k].carried_by == i) {
-                        s.flags[k].x = t->x; s.flags[k].y = t->y;
-                    }
+        if (!bfs_step(t->x, t->y, &nx, &ny)) continue;
+        t->x = nx; t->y = ny;
+        if (!t->creep.has_flag) {
+            PlayerID p = t->owner;
+            for (int k = s.path_len[p] - 1; k > t->creep.path_progress; k--) {
+                if (s.path_x[p][k] == t->x && s.path_y[p][k] == t->y) {
+                    t->creep.path_progress = k;
+                    break;
+                }
             }
+        } else {
+            for (int k = 0; k < 2; k++)
+                if (s.flags[k].carried_by == i) {
+                    s.flags[k].x = t->x; s.flags[k].y = t->y;
+                }
         }
     }
 
