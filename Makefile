@@ -7,7 +7,8 @@ SRCS := src/game/game.c src/render/render.c src/platform/platform_web.c
 SHELL_HTML := src/platform/shell.html
 OUT := build/index.html
 
-EMFLAGS := -O2 -s WASM=1 --shell-file $(SHELL_HTML)
+EMFLAGS := -O2 -s WASM=1 --shell-file $(SHELL_HTML) \
+           -s EXPORTED_RUNTIME_METHODS=UTF8ToString
 
 .PHONY: all clean serve setup
 
