@@ -6,6 +6,7 @@
 typedef enum {
     BTN_NONE = 0,
     BTN_LOCK_IN,
+    BTN_PLACE_BLOCKER,
     BTN_PLACE_GUNNER,
     BTN_PLACE_SLAMMER,
     BTN_PLACE_RESOURCE,

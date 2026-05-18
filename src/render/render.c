@@ -228,7 +228,7 @@ void render_frame(const GameState *gs) {
                      game_tower_cost((TowerType)i));
             int active  = (gs->placement_intent == i);
             int enabled = gs->players[p].resources >= game_tower_cost((TowerType)i);
-            draw_button(BTN_PLACE_GUNNER + i, sx + 10, line,
+            draw_button(BTN_PLACE_BLOCKER + i, sx + 10, line,
                         SIDEBAR_W - 20, 22, buf, active, enabled);
             line += 26;
         }

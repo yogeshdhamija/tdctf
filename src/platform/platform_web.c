@@ -119,6 +119,7 @@ void on_click(int px, int py) {
     int btn = render_button_at(px, py);
     switch (btn) {
         case BTN_LOCK_IN:         game_lock_in();                       break;
+        case BTN_PLACE_BLOCKER:   game_set_placement(TOWER_BLOCKER);     break;
         case BTN_PLACE_GUNNER:    game_set_placement(TOWER_GUNNER);     break;
         case BTN_PLACE_SLAMMER:   game_set_placement(TOWER_SLAMMER);    break;
         case BTN_PLACE_RESOURCE:  game_set_placement(TOWER_RESOURCE);   break;

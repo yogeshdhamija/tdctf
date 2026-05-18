@@ -15,6 +15,7 @@ typedef struct {
 } TowerSpec;
 
 static const TowerSpec TOWERS[TOWER_TYPE_COUNT] = {
+    [TOWER_BLOCKER]   = { 10, 50, 0, 'B', "Blocker"   },
     [TOWER_GUNNER]   = { 30, 50, 0, 'G', "Gunner"   },
     [TOWER_SLAMMER]  = { 50, 50, 0, 'S', "Slammer"  },
     [TOWER_RESOURCE] = { 80, 30, 3, 'R', "Resource" },
