@@ -93,7 +93,7 @@ static void set_status(const char *msg) {
 
 /* ── BFS pathfinding ────────────────────────────────────── */
 
-/* Creep pathing per design.md §10: "take the shortest unblocked path to any
+/* Creep pathing per docs/game-design.md §10: "take the shortest unblocked path to any
  * point on the line that's ahead of the furthest point you've already visited."
  * Implementation: callers fill bfs_goal[][] with the set of acceptable target
  * cells, then bfs_step finds the shortest path from (sx,sy) to any of them and
@@ -237,7 +237,7 @@ void game_init(void) {
 
     /* Demarcated path: a cell-by-cell L-shaped line from receptacle to enemy
      * flag. Visible to both players (render walks consecutive points) and used
-     * as the goal set for creep pathing per design.md §10. */
+     * as the goal set for creep pathing per docs/game-design.md §10. */
     for (int p = 0; p < 2; p++) {
         PlayerID enemy = (p == PLAYER_RED) ? PLAYER_BLUE : PLAYER_RED;
         int x = s.receptacle_x[p], y = s.receptacle_y[p];
@@ -415,7 +415,7 @@ static void start_simulation(void) {
 
 static void sim_one_tick(void) {
     /* Move creeps. Outbound goal set is "any cell on the line ahead of the
-     * furthest path index this creep has touched" (design.md §10). Inbound
+     * furthest path index this creep has touched" (docs/game-design.md §10). Inbound
      * just heads to the home receptacle. */
     for (int i = 0; i < s.thing_count; i++) {
         Thing *t = &s.things[i];

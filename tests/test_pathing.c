@@ -1,7 +1,7 @@
 #include "game/game.h"
 #include <stdio.h>
 
-/* Consumer-driven tests for creep pathing (design.md §10). Tests drive the
+/* Consumer-driven tests for creep pathing (docs/game-design.md §10). Tests drive the
  * public game_* API and inspect Thing state via game_get_state(). No internal
  * BFS / path-progress helpers are touched directly — they're covered
  * transitively. */

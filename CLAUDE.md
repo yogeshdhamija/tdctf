@@ -1,2 +1,4 @@
-1. Before writing any code, read and follow `ai-instructions/coding-norms.md`.
-2. As part of making any changes, read and follow `ai-instructions/context-preservation.md`
+- See `docs/game-design.md` for a understanding of what is being built.
+- See `docs/tech-design.md` for a understanding of the code.
+- Before writing any code, read and follow `docs/ai-instructions/coding-norms.md`.
+- As part of making any changes, read and follow `docs/ai-instructions/context-preservation.md`
