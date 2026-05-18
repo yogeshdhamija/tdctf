@@ -19,6 +19,7 @@ Good code cleanup means making code *shorter and more capable*, not splitting it
 ## Consumer-Driven Coding
 
 TDD is not required, but testing is essential. Follow "consumer-driven coding" — all code changes are driven by tests written at the boundary of the interface being changed.
+This includes MVP code-- don't write any code that isn't intended to be tested.
 
 ### How it works
 
