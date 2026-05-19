@@ -139,9 +139,52 @@ void on_right_click(void) {
     game_set_placement(-1); /* cancel placement intent */
 }
 
+/* ── Frame stats ── */
+
+#define FRAME_RING_SIZE 3600  /* ~60s at 60fps */
+static double g_frame_deltas[FRAME_RING_SIZE];
+static int    g_frame_ring_pos;
+static int    g_frame_ring_count;
+static double g_last_frame_time;  /* ms, from emscripten_get_now */
+static float  g_fps;
+static float  g_max_lag_ms;
+
+void plat_get_frame_stats(FrameStats *out) {
+    out->fps        = g_fps;
+    out->max_lag_ms = g_max_lag_ms;
+}
+
+static void update_frame_stats(void) {
+    double now = emscripten_get_now();
+    if (g_last_frame_time > 0.0) {
+        double dt = now - g_last_frame_time;
+        g_frame_deltas[g_frame_ring_pos] = dt;
+        g_frame_ring_pos = (g_frame_ring_pos + 1) % FRAME_RING_SIZE;
+        if (g_frame_ring_count < FRAME_RING_SIZE) g_frame_ring_count++;
+
+        /* FPS: average of last 60 frames */
+        int n = g_frame_ring_count < 60 ? g_frame_ring_count : 60;
+        double sum = 0;
+        for (int i = 0; i < n; i++) {
+            int idx = (g_frame_ring_pos - 1 - i + FRAME_RING_SIZE) % FRAME_RING_SIZE;
+            sum += g_frame_deltas[idx];
+        }
+        g_fps = (sum > 0) ? (float)(n * 1000.0 / sum) : 0;
+
+        /* Max lag: worst delta in entire ring buffer (up to 60s) */
+        double worst = 0;
+        for (int i = 0; i < g_frame_ring_count; i++) {
+            if (g_frame_deltas[i] > worst) worst = g_frame_deltas[i];
+        }
+        g_max_lag_ms = (float)worst;
+    }
+    g_last_frame_time = now;
+}
+
 /* ── Main loop ── */
 
 static void frame(void) {
+    update_frame_stats();
     game_frame();
     render_frame(game_get_state());
 }
