@@ -84,9 +84,15 @@ Towers may be destroyed during the planning phase, but the cost is not refunded.
 
 #### `10. Map Dynamics & Mazing`
 
-The game takes place on grid-based maps. Creep pathing follows a demarcated line visible to both players through the map and players may obstruct this path with their towers placed on the grid. The creep pathing algorithm is: “take the shortest unblocked path to any point on the line that’s ahead of the furthest point you’ve already visited”
+The game takes place on grid-based maps. Each player has three distinguished cells: a **spawn point** (where their creeps appear), an **enemy flag** (the objective they're trying to retrieve), and a **receptacle** (where the flag must be brought to score). Spawn and receptacle may be the same cell on some maps but are typically distinct.
 
-- Note: this may mean that creeps “know” information that hasn’t been revealed to the player through the fog of war. (Example: at a fork in the opponent’s maze, the creeps know that one path doesn’t outlet to the flag but the other does)
+Creep pathing follows a demarcated **line** visible to both players: the cells from the spawn point through the initial flag location and back to the receptacle, plus the flag's current cell (which shifts when the flag is being carried or has been dropped). Players may obstruct this line by placing towers on the grid, provided both halves of the line — spawn → flag and flag → receptacle — remain walkable.
+
+The pathing algorithm is the same for every creep, regardless of type or whether the creep is currently carrying the flag: **each tick, take the shortest unblocked path to the closest cell on the line that this creep hasn't already visited.** The flag's current cell counts as a goal whenever it's on the ground (a dropped flag pulls nearby creeps toward it); a carried flag is not a goal, so creeps don't tail-gate a teammate carrier.
+
+Picking up the flag is a side-effect of arriving on the flag's cell, not a pathing branch. Retriever creeps that step onto an at-home or dropped flag automatically pick it up; the path is unchanged.
+
+- Note: this may mean that creeps "know" information that hasn't been revealed to the player through the fog of war. (Example: at a fork in the opponent's maze, the creeps know that one path doesn't outlet to the flag but the other does)
 
 ##### Map Variety:
 

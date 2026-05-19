@@ -81,6 +81,8 @@ static void test_initial_state(void) {
     CHECK(s->placement_intent == -1);
     CHECK(s->winner == -1);
     /* Receptacles, flags, zones as documented in the design map. */
+    CHECK(s->spawn_x[PLAYER_RED] == 0  && s->spawn_y[PLAYER_RED] == 9);
+    CHECK(s->spawn_x[PLAYER_BLUE] == 29 && s->spawn_y[PLAYER_BLUE] == 11);
     CHECK(s->receptacle_x[PLAYER_RED] == 4  && s->receptacle_y[PLAYER_RED] == 4);
     CHECK(s->receptacle_x[PLAYER_BLUE] == 25 && s->receptacle_y[PLAYER_BLUE] == 15);
     CHECK(s->flags[PLAYER_RED].x == 4 && s->flags[PLAYER_RED].y == 15);
@@ -93,9 +95,12 @@ static void test_initial_state(void) {
     /* Creep upgrades initialised. */
     CHECK(s->players[PLAYER_RED].creep_upgrade_count == 4);
     CHECK(s->players[PLAYER_BLUE].creep_upgrade_count == 4);
-    /* Path was demarcated as a contiguous line. */
+    /* Path was demarcated as a contiguous line starting at the spawn cell
+     * and looping through the enemy flag back to the receptacle. */
     CHECK(s->path_len[PLAYER_RED] > 1);
-    CHECK(s->path_x[PLAYER_RED][0] == 4 && s->path_y[PLAYER_RED][0] == 4);
+    CHECK(s->path_x[PLAYER_RED][0] == 0 && s->path_y[PLAYER_RED][0] == 9);
+    int last = s->path_len[PLAYER_RED] - 1;
+    CHECK(s->path_x[PLAYER_RED][last] == 4 && s->path_y[PLAYER_RED][last] == 4);
 }
 
 /* ── 2. Phase transitions / turn counter ─────────────────────────────── */
@@ -352,7 +357,7 @@ static void test_completed_upgrade_spawns_retriever(void) {
     const Thing *r = find_creep(PLAYER_RED, CREEP_RETRIEVER);
     CHECK(r != NULL);
     if (r) {
-        CHECK(r->x == 4 && r->y == 4); /* RED receptacle */
+        CHECK(r->x == 0 && r->y == 9); /* RED spawn cell */
         CHECK(r->creep.has_flag == 0);
         CHECK(r->hp > 0 && r->hp == r->max_hp);
     }
@@ -415,11 +420,12 @@ static void test_gunner_damages_creep(void) {
     game_lock_in(); /* → SIMULATE turn 1 (no creep yet) */
     run_sim_to_completion();
 
-    /* Turn 2: BLUE retriever spawns and walks along y=15. */
+    /* Turn 2: BLUE retriever spawns at (29,10) and walks west to (4,10),
+     * then south toward (4,15). With (4,14) blocked by RED's gunner it
+     * detours via (3,14)/(5,14) — either way the creep ends up well within
+     * the gunner's range-3 envelope. ~32 ticks covers the worst case. */
     enter_sim();
-    /* Advance ~22 ticks — enough for the retriever to enter gunner range
-     * (max ~22 cells of travel from x=25 to x=4 along y=15). */
-    step_ticks(22);
+    step_ticks(32);
     const Thing *r = find_creep(PLAYER_BLUE, CREEP_RETRIEVER);
     /* The creep either has been damaged or has already died. */
     if (r) {
@@ -461,11 +467,13 @@ static void test_slammer_slows_creep(void) {
     game_buy_creep_upgrade(0);
     game_lock_in();           /* → SIMULATE turn 3 (upgrade not yet complete) */
     run_sim_to_completion();
-    /* Turn 4: retriever spawns, walks toward (4,15) — slammer hits it. */
+    /* Turn 4: retriever spawns at (29,10), walks west then south toward
+     * (4,15) — the slammer at (4,14) is in range as the creep approaches.
+     * ~32 ticks is enough to reach the kill zone even with a detour. */
     enter_sim();
     int saw_slow = 0;
     int saw_hp_drop = 0;
-    for (int i = 0; i < 25; i++) {
+    for (int i = 0; i < 32; i++) {
         step_ticks(1);
         const Thing *r = find_creep(PLAYER_BLUE, CREEP_RETRIEVER);
         if (!r) break;
@@ -528,7 +536,9 @@ static void test_flag_pickup(void) {
     enter_sim();                 /* SIMULATE turn 2 */
 
     int picked = 0;
-    for (int i = 0; i < 25; i++) {
+    /* From spawn (29,10), the retriever takes ~30 ticks to reach the flag at
+     * (4,15): 25 steps west to (4,10), then 5 south. */
+    for (int i = 0; i < 35; i++) {
         step_ticks(1);
         const Thing *r = find_creep(PLAYER_BLUE, CREEP_RETRIEVER);
         if (!r) break;
@@ -573,16 +583,17 @@ static void test_flag_drop_on_death(void) {
     game_init();
     const GameState *s = game_get_state();
 
-    /* RED places one gunner next to the at-home RED flag at (4,15). Damage
-     * profile: gunner = 10/shot @ cooldown 2; retriever HP = 20. The first
-     * shot lands when the BLUE retriever enters range (at x=6); after that
-     * the gunner's cooldown elapses by the time the retriever picks up the
-     * flag at (4,15) and starts walking back, and the next shot kills it
-     * mid-return — producing a dropped-flag state away from the at-home
-     * cell. (Two gunners would kill before pickup, leaving the flag at_home.) */
+    /* RED places one gunner at (5,15) — the first cell of BLUE's return
+     * half. Damage profile: gunner = 10/shot @ cooldown 2; retriever HP =
+     * 20. As the BLUE retriever approaches the flag at (4,15), the gunner
+     * fires once at range 3 (HP 20→10). The retriever picks up the flag at
+     * (4,15), then has to detour around the gunner cell — its first detour
+     * step lands within range again and the second shot kills it carrying
+     * the flag, leaving a drop at (4,16). (Two gunners would kill before
+     * pickup, leaving the flag at_home.) */
     game_set_placement(TOWER_GUNNER);
-    game_grid_click(4, 14);
-    CHECK(tower_id_at(4, 14) >= 0);
+    game_grid_click(5, 15);
+    CHECK(tower_id_at(5, 15) >= 0);
 
     game_lock_in();              /* → PLAN_BLUE */
     game_buy_creep_upgrade(0);
@@ -590,11 +601,10 @@ static void test_flag_drop_on_death(void) {
     run_sim_to_completion();
     enter_sim();                 /* SIMULATE turn 2 */
 
-    /* Run enough ticks for the retriever to either die before pickup or
-     * pick up and then die. Either way, the flag must end up dropped (not
-     * at_home, not carried) somewhere outside the pickup of a live carrier. */
+    /* Drop lands at ~tick 32 of the sim phase (25 ticks west + 5 south +
+     * 1 detour step). Wait a bit longer to be safe. */
     int observed_drop = 0;
-    for (int i = 0; i < 30; i++) {
+    for (int i = 0; i < 40; i++) {
         step_ticks(1);
         /* Check whether the flag is ever in a "dropped" state: not at_home
          * AND not carried. That can only happen if a carrier died. */
@@ -604,6 +614,35 @@ static void test_flag_drop_on_death(void) {
         }
     }
     CHECK(observed_drop);
+}
+
+/* ── 17. Placement validity ──────────────────────────────────────────── */
+
+/* placement_valid rejects the obvious illegal cells (receptacle, at-home
+ * flag) via explicit guards, and consults paths_valid for everything else.
+ * paths_valid in turn requires the full loop (spawn → enemy flag → own
+ * receptacle) to remain walkable. A normal placement on a line cell should
+ * succeed when an alternate BFS route exists. */
+static void test_placement_validity(void) {
+    g_test = "placement_validity";
+    game_init();
+    const GameState *s = game_get_state();
+
+    /* Receptacle cell rejected. */
+    game_set_placement(TOWER_GUNNER);
+    game_grid_click(s->receptacle_x[PLAYER_RED], s->receptacle_y[PLAYER_RED]);
+    CHECK(s->grid[s->receptacle_x[PLAYER_RED]][s->receptacle_y[PLAYER_RED]].thing_id == -1);
+
+    /* At-home flag cell rejected. */
+    game_set_placement(TOWER_GUNNER);
+    game_grid_click(s->flags[PLAYER_RED].x, s->flags[PLAYER_RED].y);
+    CHECK(s->grid[s->flags[PLAYER_RED].x][s->flags[PLAYER_RED].y].thing_id == -1);
+
+    /* A line cell with alternate routes around it succeeds. (10,10) sits
+     * on RED's outbound y=10 corridor; the rest of the grid is wide open. */
+    game_set_placement(TOWER_GUNNER);
+    game_grid_click(10, 10);
+    CHECK(s->grid[10][10].thing_id != -1);
 }
 
 /* ── main ─────────────────────────────────────────────────────────── */
@@ -627,6 +666,7 @@ int main(void) {
     test_flag_pickup();
     test_win_condition();
     test_flag_drop_on_death();
+    test_placement_validity();
     printf("%d assertions, %d failures\n", g_assertions, g_fail);
     return g_fail ? 1 : 0;
 }

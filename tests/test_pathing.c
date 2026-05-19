@@ -1,15 +1,16 @@
 #include "game/game.h"
 #include <stdio.h>
+#include <string.h>
 
-/* Consumer-driven tests for creep pathing (docs/game-design.md §10). Tests drive the
- * public game_* API and inspect Thing state via game_get_state(). No internal
- * BFS / path-progress helpers are touched directly — they're covered
- * transitively.
+/* Pathing tests per docs/game-design.md §10 and docs/ai-instructions/coding-norms.md
+ * "Layered Testing".
  *
- * NB: base retriever spawn count is currently 0 — to get a creep on the
- * field the test buys a +1 retriever upgrade (research_turns=1) in turn 1
- * and lets that turn's quiet sim phase elapse so the upgrade completes;
- * turn 2's sim is then the one under test. */
+ * ONE test exercises a full game board — the happy-path retriever loop. All
+ * other branches in the pathing logic are tested one layer down: against
+ * game_pathing_next_step with a hand-built GameState. No game_init, no turn
+ * machinery, no spawning — just "given this map, where would the next step
+ * go?". A regression in a branch points at exactly the one test that covers
+ * it. */
 
 static int         g_assertions;
 static int         g_fail;
@@ -24,145 +25,150 @@ static const char *g_test;
     }                                                                       \
 } while (0)
 
-static void step_ticks(int n) {
-    for (int i = 0; i < n * SIM_FRAMES_PER_TICK; i++) game_frame();
-}
+/* ── full-board test ─────────────────────────────────────────────────── */
 
-static const Thing *first_creep(PlayerID owner) {
-    const GameState *s = game_get_state();
-    for (int i = 0; i < s->thing_count; i++) {
-        const Thing *t = &s->things[i];
-        if (t->tag == THING_CREEP && t->alive && t->owner == owner) return t;
-    }
-    return NULL;
-}
-
-static void enter_sim(void) {
-    game_lock_in();   /* PHASE_PLAN_RED  → PHASE_PLAN_BLUE */
-    game_lock_in();   /* PHASE_PLAN_BLUE → PHASE_SIMULATE  */
-}
-
-static void run_sim_to_completion(void) {
-    /* Step until the sim phase ends and we're back in PHASE_PLAN_RED.
-     * Bounded loop so a regression in phase advancement can't hang the test. */
+/* The single feature-level test: a retriever spawned at the RED spawn cell
+ * walks the entire line — outbound to the enemy flag, picks it up at the
+ * flag's cell, and continues along the return half to its own receptacle,
+ * triggering the win condition. Exercises one path through every layer
+ * (spawn → unified pathing → flag pickup → win check). */
+static void test_retriever_walks_full_loop_and_wins(void) {
+    g_test = "retriever_walks_full_loop_and_wins";
+    game_init();
+    game_buy_creep_upgrade(0);   /* RED +1 retriever, 1 turn research */
+    game_lock_in();              /* → PLAN_BLUE */
+    game_lock_in();              /* → SIMULATE turn 1 (upgrade still researching) */
+    /* Drain the quiet sim. */
     for (int i = 0; i < SIM_TICKS_PER_TURN * SIM_FRAMES_PER_TICK + 200; i++) {
         game_frame();
-        if (game_get_state()->phase == PHASE_PLAN_RED) return;
+        if (game_get_state()->phase == PHASE_PLAN_RED) break;
     }
-}
-
-/* Run turn 1 quietly so the +1 retriever upgrade RED purchased completes,
- * then enter the turn 2 sim where a retriever is guaranteed to spawn. */
-static void setup_turn2_with_red_retriever(void) {
-    game_buy_creep_upgrade(0); /* RED +1 Retriever, research_turns=1 */
-    enter_sim();
-    run_sim_to_completion();
-    /* now in PHASE_PLAN_RED, turn 2; upgrade is completed → 1 retriever per spawn */
-    enter_sim();
-}
-
-/* On the default map, RED's demarcated line runs straight from receptacle
- * (4,4) to enemy flag (25,4) along y=4. With no obstructions the retriever
- * should walk one cell per tick, and path_progress should tick up in lockstep
- * — proof that the goal set is "forward path cells", not just the flag. */
-static void test_line_following_unobstructed(void) {
-    g_test = "line_following_unobstructed";
-    game_init();
-    setup_turn2_with_red_retriever();
-    CHECK(game_get_state()->phase == PHASE_SIMULATE);
-
-    for (int tick = 1; tick <= 5; tick++) {
-        step_ticks(1);
-        const Thing *t = first_creep(PLAYER_RED);
-        CHECK(t != NULL);
-        if (!t) return;
-        CHECK(t->x == 4 + tick);
-        CHECK(t->y == 4);
-        CHECK(t->creep.path_progress == tick);
+    game_lock_in(); game_lock_in(); /* → SIMULATE turn 2: retriever spawns */
+    for (int i = 0; i < SIM_TICKS_PER_TURN * SIM_FRAMES_PER_TICK + 200; i++) {
+        game_frame();
+        if (game_get_state()->phase == PHASE_GAME_OVER) break;
     }
-}
-
-/* Tower placed on path index 6 forces a detour. BLOCKER is used so it neither
- * shoots the creep nor generates noise. Invariants:
- *   1. The placement is accepted (paths_valid sees an alternate route).
- *   2. The creep never occupies the blocked cell.
- *   3. path_progress eventually passes index 6 — the creep rejoins the line
- *      at a forward cell, not just any cell. */
-static void test_detour_around_blocking_tower(void) {
-    g_test = "detour_around_blocking_tower";
-    game_init();
-    game_set_placement(TOWER_BLOCKER);
-    game_grid_click(10, 4);
     const GameState *s = game_get_state();
-    CHECK(s->grid[10][4].thing_id != -1);
+    CHECK(s->phase == PHASE_GAME_OVER);
+    CHECK(s->winner == PLAYER_RED);
+}
 
-    setup_turn2_with_red_retriever();
-    CHECK(s->phase == PHASE_SIMULATE);
+/* ── lower-level tests: game_pathing_next_step ───────────────────────── */
 
-    int max_progress = 0;
-    for (int tick = 1; tick <= 15; tick++) {
-        step_ticks(1);
-        const Thing *t = first_creep(PLAYER_RED);
-        CHECK(t != NULL);
-        if (!t) return;
-        CHECK(!(t->x == 10 && t->y == 4));
-        if (t->creep.path_progress > max_progress)
-            max_progress = t->creep.path_progress;
+/* Construct a minimal walkable state with the given line endpoints. RED is
+ * the acting player; BLUE owns the enemy flag at (flag_x, flag_y). The
+ * caller can post-hoc block grid cells (gs.grid[x][y].thing_id = nonzero)
+ * or move/carry the flag to construct each scenario. */
+static void minimal_state(GameState *gs, int w, int h,
+                          int sx, int sy, int fx, int fy, int rx, int ry) {
+    memset(gs, 0, sizeof(*gs));
+    gs->grid_w = w; gs->grid_h = h;
+    for (int x = 0; x < w; x++)
+        for (int y = 0; y < h; y++)
+            gs->grid[x][y].thing_id = -1;
+    for (int k = 0; k < 2; k++) {
+        gs->flags[k].carried_by = -1;
+        gs->flags[k].at_home    = 1;
     }
-    CHECK(max_progress > 6);
+    gs->spawn_x[PLAYER_RED]      = sx; gs->spawn_y[PLAYER_RED]      = sy;
+    gs->receptacle_x[PLAYER_RED] = rx; gs->receptacle_y[PLAYER_RED] = ry;
+    gs->flags[PLAYER_BLUE].x = fx; gs->flags[PLAYER_BLUE].y = fy;
+    gs->flags[PLAYER_BLUE].owner = PLAYER_BLUE;
+    game_build_path(gs, PLAYER_RED);
 }
 
-/* While outbound, path_progress must be monotonically non-decreasing — even
- * across a detour where the creep is off-line for several ticks. */
-static void test_path_progress_monotonic(void) {
-    g_test = "path_progress_monotonic";
-    game_init();
-    game_set_placement(TOWER_BLOCKER);
-    game_grid_click(10, 4);
-    setup_turn2_with_red_retriever();
+/* On an unobstructed grid the creep walks the line one cell at a time. Two
+ * probes: at spawn moving toward the flag, and at the flag moving onto the
+ * return half. */
+static void test_next_step_follows_line(void) {
+    g_test = "next_step_follows_line";
+    GameState gs;
+    /* Path: (0,0)..(5,0)[flag]..(5,5)[receptacle]. Length 11. */
+    minimal_state(&gs, 10, 10, /*spawn*/0,0, /*flag*/5,0, /*recept*/5,5);
 
-    int last = 0;
-    for (int tick = 1; tick <= 15; tick++) {
-        step_ticks(1);
-        const Thing *t = first_creep(PLAYER_RED);
-        CHECK(t != NULL);
-        if (!t || t->creep.has_flag) break;
-        CHECK(t->creep.path_progress >= last);
-        last = t->creep.path_progress;
-    }
+    int nx, ny;
+    CHECK(game_pathing_next_step(&gs, 0, 0, PLAYER_RED, 0, &nx, &ny));
+    CHECK(nx == 1 && ny == 0);
+
+    /* At flag cell (5,0) with path_progress = 5: the flag itself is a goal
+     * but is excluded as the creep's own cell, so the next step is path[6]. */
+    CHECK(game_pathing_next_step(&gs, 5, 0, PLAYER_RED, 5, &nx, &ny));
+    CHECK(nx == 5 && ny == 1);
 }
 
-/* Sanity-check that placement_valid still rejects the obvious illegal cells.
- * This exercises the paths_valid path in placement_valid indirectly — if
- * paths_valid were broken (e.g., always returning true), placing on the
- * receptacle would still be rejected by an earlier check, so we additionally
- * verify a normal valid placement DOES succeed. */
-static void test_placement_validity(void) {
-    g_test = "placement_validity";
-    game_init();
-    const GameState *s = game_get_state();
+/* A blocked line cell forces BFS to reroute through off-line walkable cells.
+ * The first step must be off the line, not into the blocked cell. */
+static void test_detour_around_obstacle(void) {
+    g_test = "detour_around_obstacle";
+    GameState gs;
+    minimal_state(&gs, 10, 10, 0,0, 5,0, 5,5);
+    gs.grid[2][0].thing_id = 99;   /* block path[2] */
 
-    /* Receptacle cell rejected. */
-    game_set_placement(TOWER_GUNNER);
-    game_grid_click(s->receptacle_x[PLAYER_RED], s->receptacle_y[PLAYER_RED]);
-    CHECK(s->grid[s->receptacle_x[PLAYER_RED]][s->receptacle_y[PLAYER_RED]].thing_id == -1);
-
-    /* Flag cell (RED's own flag is at_home) rejected. */
-    game_set_placement(TOWER_GUNNER);
-    game_grid_click(s->flags[PLAYER_RED].x, s->flags[PLAYER_RED].y);
-    CHECK(s->grid[s->flags[PLAYER_RED].x][s->flags[PLAYER_RED].y].thing_id == -1);
-
-    /* Normal placement on the line succeeds — alternate routes exist. */
-    game_set_placement(TOWER_GUNNER);
-    game_grid_click(10, 4);
-    CHECK(s->grid[10][4].thing_id != -1);
+    int nx, ny;
+    CHECK(game_pathing_next_step(&gs, 1, 0, PLAYER_RED, 1, &nx, &ny));
+    /* (2,0) blocked → BFS finds (3,0) via (1,0)→(1,1)→(2,1)→(3,1)→(3,0).
+     * BFS expansion order at (1,0) is right→left→down→up; right is blocked
+     * and left enters a dead corner first, so the shortest goal is reached
+     * through (1,1). */
+    CHECK(nx == 1 && ny == 1);
 }
+
+/* A dropped flag (carried_by == -1, off the static line) becomes an extra
+ * goal cell. If it's the closest unvisited goal, BFS steers the creep
+ * toward it instead of toward the line. */
+static void test_dropped_flag_is_a_goal(void) {
+    g_test = "dropped_flag_is_a_goal";
+    GameState gs;
+    minimal_state(&gs, 10, 10, 0,0, 5,0, 5,5);
+    /* Wall off the outbound half so the closest line cell is far. */
+    gs.grid[2][0].thing_id = 99;
+    gs.grid[3][0].thing_id = 99;
+    gs.grid[4][0].thing_id = 99;
+    /* Move the flag to (0,2) — dropped, off-line. */
+    gs.flags[PLAYER_BLUE].x = 0;
+    gs.flags[PLAYER_BLUE].y = 2;
+    gs.flags[PLAYER_BLUE].at_home = 0;
+    gs.flags[PLAYER_BLUE].carried_by = -1;
+
+    int nx, ny;
+    CHECK(game_pathing_next_step(&gs, 1, 0, PLAYER_RED, 1, &nx, &ny));
+    /* Flag at (0,2) is 3 steps from (1,0); the nearest reachable line cell
+     * is (5,1) at 5+ steps. BFS heads for the flag — first step (0,0). */
+    CHECK(nx == 0 && ny == 0);
+}
+
+/* The same geometry as the previous test, but the flag is being carried
+ * (carried_by != -1). The flag's coords are NOT in the goal set, so the
+ * creep falls back to the static line and BFS heads for the nearest path
+ * cell — a different first step. */
+static void test_carried_flag_is_not_a_goal(void) {
+    g_test = "carried_flag_is_not_a_goal";
+    GameState gs;
+    minimal_state(&gs, 10, 10, 0,0, 5,0, 5,5);
+    gs.grid[2][0].thing_id = 99;
+    gs.grid[3][0].thing_id = 99;
+    gs.grid[4][0].thing_id = 99;
+    gs.flags[PLAYER_BLUE].x = 0;
+    gs.flags[PLAYER_BLUE].y = 2;
+    gs.flags[PLAYER_BLUE].at_home = 0;
+    gs.flags[PLAYER_BLUE].carried_by = 7;   /* in-flight on some other creep */
+
+    int nx, ny;
+    CHECK(game_pathing_next_step(&gs, 1, 0, PLAYER_RED, 1, &nx, &ny));
+    /* No flag-goal: BFS routes around the wall to reach (5,1) via
+     * (1,0)→(1,1)→(2,1)→(3,1)→(4,1)→(5,1). First step (1,1) — distinct
+     * from (0,0) in the dropped-flag case, proving the conditional. */
+    CHECK(nx == 1 && ny == 1);
+}
+
+/* ── main ────────────────────────────────────────────────────────────── */
 
 int main(void) {
-    test_line_following_unobstructed();
-    test_detour_around_blocking_tower();
-    test_path_progress_monotonic();
-    test_placement_validity();
+    test_retriever_walks_full_loop_and_wins();
+    test_next_step_follows_line();
+    test_detour_around_obstacle();
+    test_dropped_flag_is_a_goal();
+    test_carried_flag_is_not_a_goal();
     printf("%d assertions, %d failures\n", g_assertions, g_fail);
     return g_fail ? 1 : 0;
 }
