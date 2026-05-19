@@ -27,7 +27,27 @@ void plat_fill_rect(int x, int y, int w, int h, uint32_t c)              { (void
 void plat_draw_circle(int cx, int cy, int r, uint32_t c)                 { (void)cx;(void)cy;(void)r;(void)c; }
 void plat_fill_circle(int cx, int cy, int r, uint32_t c)                 { (void)cx;(void)cy;(void)r;(void)c; }
 void plat_draw_line(int x1, int y1, int x2, int y2, uint32_t c)          { (void)x1;(void)y1;(void)x2;(void)y2;(void)c; }
-void plat_draw_text(int x, int y, const char *t, uint32_t c)             { (void)x;(void)y;(void)t;(void)c; }
+/* Captured plat_draw_text calls — render.c is consumer-tested through these
+ * so tests can assert what text was drawn (and in what color), not just
+ * which buttons were placed. Reset between renders via reset_text_log(). */
+typedef struct { int x, y; uint32_t color; char text[64]; } TextCall;
+#define MAX_TEXT_CALLS 256
+static TextCall g_text_calls[MAX_TEXT_CALLS];
+static int      g_text_call_count;
+static void reset_text_log(void) { g_text_call_count = 0; }
+void plat_draw_text(int x, int y, const char *t, uint32_t c) {
+    if (g_text_call_count >= MAX_TEXT_CALLS) return;
+    TextCall *tc = &g_text_calls[g_text_call_count++];
+    tc->x = x; tc->y = y; tc->color = c;
+    size_t n = strlen(t);
+    if (n >= sizeof(tc->text)) n = sizeof(tc->text) - 1;
+    memcpy(tc->text, t, n); tc->text[n] = 0;
+}
+static const TextCall *find_text(const char *needle) {
+    for (int i = 0; i < g_text_call_count; i++)
+        if (strstr(g_text_calls[i].text, needle)) return &g_text_calls[i];
+    return NULL;
+}
 void plat_draw_triangle(int a, int b, int c2, int d, int e, int f, uint32_t g) {
     (void)a;(void)b;(void)c2;(void)d;(void)e;(void)f;(void)g;
 }
@@ -175,6 +195,85 @@ static void test_simulation_phase_no_buttons(void) {
     CHECK(!present(BTN_RESTART));
 }
 
+/* When multiple creeps share a cell, a per-owner count badge is drawn in the
+ * cell so the player can tell the count and type mix. Setup: BLUE buys the
+ * +2-retrievers upgrade (2 turn research). Through turns 1 and 2 nothing
+ * spawns, so the BLUE retriever can't win mid-test; on turn 3's sim start
+ * two retrievers materialise at the BLUE receptacle (25,15), stacked. */
+static void test_stacked_creep_count_badge(void) {
+    g_test = "stacked_creep_count_badge";
+    game_init();
+    game_lock_in();                 /* → PLAN_BLUE */
+    game_buy_creep_upgrade(2);      /* +2 retrievers, 2 turn research */
+    game_lock_in();                 /* → SIMULATE turn 1 (no creeps yet) */
+    for (int i = 0; i < SIM_TICKS_PER_TURN * SIM_FRAMES_PER_TICK + 200; i++) {
+        game_frame();
+        if (game_get_state()->phase == PHASE_PLAN_RED) break;
+    }
+    game_lock_in(); game_lock_in(); /* → SIMULATE turn 2 (still no creeps) */
+    for (int i = 0; i < SIM_TICKS_PER_TURN * SIM_FRAMES_PER_TICK + 200; i++) {
+        game_frame();
+        if (game_get_state()->phase == PHASE_PLAN_RED) break;
+    }
+    game_lock_in(); game_lock_in(); /* → SIMULATE turn 3: 2 retrievers spawn together */
+
+    const GameState *s = game_get_state();
+    int count = 0;
+    for (int i = 0; i < s->thing_count; i++) {
+        const Thing *t = &s->things[i];
+        if (t->tag != THING_CREEP || !t->alive) continue;
+        if (t->owner != PLAYER_BLUE) continue;
+        count++;
+        CHECK(t->x == 25 && t->y == 15);
+    }
+    CHECK(count == 2);
+
+    reset_text_log();
+    render_frame(s);
+    /* The sidebar also draws "spawn 2R 0S" so we can't just look for "2R"
+     * anywhere — pin to the (25,15) cell. */
+    int x_lo = 25 * CELL_SIZE, x_hi = 26 * CELL_SIZE;
+    int y_lo = 15 * CELL_SIZE, y_hi = 16 * CELL_SIZE;
+    const TextCall *badge = NULL;
+    for (int i = 0; i < g_text_call_count; i++) {
+        const TextCall *tc = &g_text_calls[i];
+        if (tc->x >= x_lo && tc->x < x_hi &&
+            tc->y >= y_lo && tc->y < y_hi &&
+            strstr(tc->text, "2R")) {
+            badge = tc;
+            break;
+        }
+    }
+    CHECK(badge != NULL);
+    if (badge) CHECK(badge->color == 0x4477CC); /* BLUE */
+}
+
+/* The crowding badge only appears when more than one creep occupies a cell.
+ * One spawned retriever → no in-grid badge. (Sidebar may show "spawn 1R …"
+ * but that's outside the grid area.) */
+static void test_single_creep_no_badge(void) {
+    g_test = "single_creep_no_badge";
+    game_init();
+    game_lock_in();                 /* → PLAN_BLUE */
+    game_buy_creep_upgrade(0);      /* +1 retriever */
+    game_lock_in();                 /* → SIMULATE turn 1 (no creeps yet) */
+    for (int i = 0; i < SIM_TICKS_PER_TURN * SIM_FRAMES_PER_TICK + 200; i++) {
+        game_frame();
+        if (game_get_state()->phase == PHASE_PLAN_RED) break;
+    }
+    game_lock_in(); game_lock_in(); /* → SIMULATE turn 2: 1 retriever spawns */
+
+    reset_text_log();
+    render_frame(game_get_state());
+    int gw = 30 * CELL_SIZE;
+    for (int i = 0; i < g_text_call_count; i++) {
+        const TextCall *tc = &g_text_calls[i];
+        if (tc->x >= gw) continue; /* sidebar */
+        CHECK(strstr(tc->text, "1R") == NULL);
+        CHECK(strstr(tc->text, "1S") == NULL);
+    }
+}
+
 /* When the game ends, only the Restart button is hittable. */
 static void test_game_over_shows_restart(void) {
     g_test = "game_over_shows_restart";
@@ -215,6 +314,8 @@ int main(void) {
     test_own_tower_selected_shows_upgrade_destroy();
     test_enemy_tower_selected_no_upgrade_destroy();
     test_simulation_phase_no_buttons();
+    test_stacked_creep_count_badge();
+    test_single_creep_no_badge();
     test_game_over_shows_restart();
     printf("%d assertions, %d failures\n", g_assertions, g_fail);
     return g_fail ? 1 : 0;

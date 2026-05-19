@@ -133,9 +133,12 @@ void render_frame(const GameState *gs) {
     }
 
     /* Creeps */
+    static int creep_cnt[MAX_GRID_W][MAX_GRID_H][2][CREEP_TYPE_COUNT];
+    memset(creep_cnt, 0, sizeof(creep_cnt));
     for (int i = 0; i < gs->thing_count; i++) {
         const Thing *t = &gs->things[i];
         if (t->tag != THING_CREEP || !t->alive) continue;
+        creep_cnt[t->x][t->y][t->owner][t->creep.type]++;
         uint32_t col = (t->creep.type == CREEP_SIEGE)
                        ? player_color_dim(t->owner) : player_color(t->owner);
         int cx = t->x * CELL_SIZE + CELL_SIZE/2;
@@ -149,6 +152,32 @@ void render_frame(const GameState *gs) {
             uint32_t fcol = player_color(flag_owner);
             plat_draw_line(cx - 7, cy - 12, cx - 7, cy + 2, fcol);
             plat_draw_triangle(cx - 7, cy - 12, cx + 3, cy - 9, cx - 7, cy - 6, fcol);
+        }
+    }
+
+    /* Per-cell crowding badge: when more than one creep shares a cell the
+     * individual circles fully overlap and the player can't see the count
+     * or the type mix. Draw a compact per-owner label like "2R", "3S", or
+     * "2R1S" anchored to the top of the cell in the owner's color, with a
+     * dark backdrop so it stays readable over the creep circle. */
+    for (int x = 0; x < gs->grid_w; x++) {
+        for (int y = 0; y < gs->grid_h; y++) {
+            int total = creep_cnt[x][y][0][CREEP_RETRIEVER] + creep_cnt[x][y][0][CREEP_SIEGE]
+                      + creep_cnt[x][y][1][CREEP_RETRIEVER] + creep_cnt[x][y][1][CREEP_SIEGE];
+            if (total < 2) continue;
+            int by = y * CELL_SIZE + 1;
+            for (int p = 0; p < 2; p++) {
+                int rc = creep_cnt[x][y][p][CREEP_RETRIEVER];
+                int sc = creep_cnt[x][y][p][CREEP_SIEGE];
+                if (rc + sc == 0) continue;
+                if      (rc > 0 && sc > 0) snprintf(buf, sizeof(buf), "%dR%dS", rc, sc);
+                else if (rc > 0)           snprintf(buf, sizeof(buf), "%dR", rc);
+                else                       snprintf(buf, sizeof(buf), "%dS", sc);
+                int label_w = (int)strlen(buf) * 8 + 2;
+                plat_fill_rect(x * CELL_SIZE + 1, by, label_w, 12, 0x000000);
+                plat_draw_text(x * CELL_SIZE + 2, by, buf, player_color((PlayerID)p));
+                by += 13;
+            }
         }
     }
 
