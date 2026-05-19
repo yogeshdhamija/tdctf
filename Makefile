@@ -7,13 +7,13 @@ SRCS := src/game/game.c src/render/render.c src/platform/platform_web.c
 SHELL_HTML := src/platform/shell.html
 OUT := build/index.html
 
-EMFLAGS := -O2 -s WASM=1 --shell-file $(SHELL_HTML) \
+EMFLAGS := -O2 -s WASM=1 -s SINGLE_FILE=1 --shell-file $(SHELL_HTML) \
            -s EXPORTED_RUNTIME_METHODS=UTF8ToString
 
 TEST_BIN := build/test_pathing
 TEST_SRCS := tests/test_pathing.c src/game/game.c
 
-.PHONY: all clean serve setup test
+.PHONY: all clean setup test
 
 all: $(OUT)
 
@@ -32,10 +32,6 @@ build:
 setup:
 	git clone https://github.com/emscripten-core/emsdk.git $(EMSDK_DIR)
 	cd $(EMSDK_DIR) && ./emsdk install latest && ./emsdk activate latest
-
-serve: $(OUT)
-	@echo "Serving at http://localhost:8080"
-	python3 -m http.server 8080 --directory build
 
 clean:
 	rm -rf build
