@@ -231,7 +231,7 @@ void render_frame(const GameState *gs) {
                  gs->players[p].resources, gs->players[p].income_per_turn);
         plat_draw_text(sx + 10, line, buf, player_color((PlayerID)p));
         line += 18;
-        int rcount = 1, scount = 0;
+        int rcount = 0, scount = 0;
         for (int i = 0; i < gs->players[p].creep_upgrade_count; i++) {
             const CreepUpgrade *u = &gs->players[p].creep_upgrades[i];
             if (!u->completed) continue;
