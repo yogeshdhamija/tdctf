@@ -1,3 +1,4 @@
+- See `README.md` for how to test & build & run.
 - See `docs/game-design.md` for a understanding of what is being built.
 - See `docs/tech-design.md` for a understanding of the code.
 - Before writing any code, read and follow `docs/ai-instructions/coding-norms.md`.

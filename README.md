@@ -1,5 +1,12 @@
 # tdctf
 
+Common commands:
+```
+make clean
+make test
+make build
+```
+
 ## Setup
 
 Install the Emscripten SDK (one-time):
