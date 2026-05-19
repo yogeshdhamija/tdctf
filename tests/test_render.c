@@ -1,0 +1,221 @@
+#include "render/render.h"
+#include "game/game.h"
+#include "platform/platform.h"
+#include <stdio.h>
+#include <string.h>
+
+/* Consumer-driven tests for the render layer's click-hit testing
+ * (render_button_at). render.c records every button-shaped rect into a
+ * static table during render_frame; render_button_at later queries that
+ * table. We exercise the public API only:
+ *
+ *   1. Build a GameState via game_init() + game_* actions.
+ *   2. Call render_frame(state) with the game state.
+ *   3. Sweep pixel coordinates with render_button_at to collect the set
+ *      of ButtonIDs currently hittable, and assert against expectations.
+ *
+ * Drawing primitives are stubbed out — we don't care about pixels here,
+ * only about the click-to-action wiring.
+ *
+ * Add new tests as render-layer features land. */
+
+/* ── platform stubs (no-op draw primitives) ─────────────────────────── */
+
+void plat_clear(uint32_t c)                                              { (void)c; }
+void plat_draw_rect(int x, int y, int w, int h, uint32_t c)              { (void)x;(void)y;(void)w;(void)h;(void)c; }
+void plat_fill_rect(int x, int y, int w, int h, uint32_t c)              { (void)x;(void)y;(void)w;(void)h;(void)c; }
+void plat_draw_circle(int cx, int cy, int r, uint32_t c)                 { (void)cx;(void)cy;(void)r;(void)c; }
+void plat_fill_circle(int cx, int cy, int r, uint32_t c)                 { (void)cx;(void)cy;(void)r;(void)c; }
+void plat_draw_line(int x1, int y1, int x2, int y2, uint32_t c)          { (void)x1;(void)y1;(void)x2;(void)y2;(void)c; }
+void plat_draw_text(int x, int y, const char *t, uint32_t c)             { (void)x;(void)y;(void)t;(void)c; }
+void plat_draw_triangle(int a, int b, int c2, int d, int e, int f, uint32_t g) {
+    (void)a;(void)b;(void)c2;(void)d;(void)e;(void)f;(void)g;
+}
+void plat_get_frame_stats(FrameStats *out)                               { out->fps = 60; out->max_lag_ms = 0; }
+
+/* ── harness ────────────────────────────────────────────────────────── */
+
+static int         g_assertions;
+static int         g_fail;
+static const char *g_test;
+
+#define CHECK(cond) do {                                                    \
+    g_assertions++;                                                         \
+    if (!(cond)) {                                                          \
+        fprintf(stderr, "  [%s] FAIL %s:%d: %s\n",                          \
+                g_test, __FILE__, __LINE__, #cond);                         \
+        g_fail++;                                                           \
+    }                                                                       \
+} while (0)
+
+/* Sweep the canvas after a render_frame and record which ButtonIDs are
+ * currently hittable anywhere. Buttons are all >= 20x18 px, so the sweep
+ * stride is fine at 4 px. */
+static int g_present[16];
+static void scan_buttons(void) {
+    memset(g_present, 0, sizeof(g_present));
+    int gw = 30 * CELL_SIZE, gh = 20 * CELL_SIZE;
+    int total_w = gw + SIDEBAR_W;
+    for (int y = 0; y < gh; y += 4)
+        for (int x = 0; x < total_w; x += 4) {
+            int id = render_button_at(x, y);
+            if (id > 0 && id < 16) g_present[id] = 1;
+        }
+}
+
+static int present(int id) { return g_present[id]; }
+
+/* ── tests ──────────────────────────────────────────────────────────── */
+
+/* The grid area (left of the sidebar) has no buttons in any phase —
+ * grid clicks must always fall through to game_grid_click, not a button. */
+static void test_no_buttons_in_grid_area(void) {
+    g_test = "no_buttons_in_grid_area";
+    game_init();
+    render_frame(game_get_state());
+
+    int gw = 30 * CELL_SIZE, gh = 20 * CELL_SIZE;
+    int any_button = 0;
+    for (int y = 0; y < gh; y += 4)
+        for (int x = 0; x < gw; x += 4)
+            if (render_button_at(x, y) != BTN_NONE) any_button = 1;
+    CHECK(!any_button);
+}
+
+/* In PLAN_RED with no purchases yet, the sidebar shows the Lock In button,
+ * all four PLACE_* buttons, and all four BUY_UPGRADE_* buttons. */
+static void test_planning_buttons_visible(void) {
+    g_test = "planning_buttons_visible";
+    game_init();
+    render_frame(game_get_state());
+    scan_buttons();
+    CHECK(present(BTN_LOCK_IN));
+    CHECK(present(BTN_PLACE_BLOCKER));
+    CHECK(present(BTN_PLACE_GUNNER));
+    CHECK(present(BTN_PLACE_SLAMMER));
+    CHECK(present(BTN_PLACE_RESOURCE));
+    CHECK(present(BTN_BUY_UPGRADE_0));
+    CHECK(present(BTN_BUY_UPGRADE_1));
+    CHECK(present(BTN_BUY_UPGRADE_2));
+    CHECK(present(BTN_BUY_UPGRADE_3));
+    /* No tower selected yet → no upgrade/destroy buttons. */
+    CHECK(!present(BTN_UPGRADE_TOWER));
+    CHECK(!present(BTN_DESTROY_TOWER));
+    /* Not in game over → no restart. */
+    CHECK(!present(BTN_RESTART));
+}
+
+/* Purchasing an upgrade flips it from a clickable button to a status tile
+ * — the BTN_BUY_UPGRADE_N entry should no longer be present in the hit
+ * table. */
+static void test_buy_upgrade_button_disappears_after_purchase(void) {
+    g_test = "buy_upgrade_button_disappears_after_purchase";
+    game_init();
+    render_frame(game_get_state());
+    scan_buttons();
+    CHECK(present(BTN_BUY_UPGRADE_0));
+
+    game_buy_creep_upgrade(0);
+    render_frame(game_get_state());
+    scan_buttons();
+    CHECK(!present(BTN_BUY_UPGRADE_0));
+    /* Siblings still buyable. */
+    CHECK(present(BTN_BUY_UPGRADE_1));
+}
+
+/* Selecting one of your own towers exposes the Upgrade and Destroy
+ * buttons. */
+static void test_own_tower_selected_shows_upgrade_destroy(void) {
+    g_test = "own_tower_selected_shows_upgrade_destroy";
+    game_init();
+    /* Place a RED gunner — placement also sets selected_x/y to the new tower. */
+    game_set_placement(TOWER_GUNNER);
+    game_grid_click(6, 4);
+
+    render_frame(game_get_state());
+    scan_buttons();
+    CHECK(present(BTN_UPGRADE_TOWER));
+    CHECK(present(BTN_DESTROY_TOWER));
+}
+
+/* When the *other* player is planning, the Upgrade/Destroy buttons are
+ * not drawn for a selected tower they don't own. */
+static void test_enemy_tower_selected_no_upgrade_destroy(void) {
+    g_test = "enemy_tower_selected_no_upgrade_destroy";
+    game_init();
+    game_set_placement(TOWER_GUNNER);
+    game_grid_click(6, 4);
+    /* Hand off to BLUE planning and re-select RED's tower. */
+    game_lock_in();
+    game_grid_click(6, 4);
+
+    render_frame(game_get_state());
+    scan_buttons();
+    CHECK(!present(BTN_UPGRADE_TOWER));
+    CHECK(!present(BTN_DESTROY_TOWER));
+}
+
+/* During SIMULATE the sidebar shows tick text but no clickable elements. */
+static void test_simulation_phase_no_buttons(void) {
+    g_test = "simulation_phase_no_buttons";
+    game_init();
+    game_lock_in(); /* → PLAN_BLUE */
+    game_lock_in(); /* → SIMULATE  */
+
+    render_frame(game_get_state());
+    scan_buttons();
+    CHECK(!present(BTN_LOCK_IN));
+    CHECK(!present(BTN_PLACE_BLOCKER));
+    CHECK(!present(BTN_PLACE_GUNNER));
+    CHECK(!present(BTN_PLACE_SLAMMER));
+    CHECK(!present(BTN_PLACE_RESOURCE));
+    CHECK(!present(BTN_BUY_UPGRADE_0));
+    CHECK(!present(BTN_UPGRADE_TOWER));
+    CHECK(!present(BTN_DESTROY_TOWER));
+    CHECK(!present(BTN_RESTART));
+}
+
+/* When the game ends, only the Restart button is hittable. */
+static void test_game_over_shows_restart(void) {
+    g_test = "game_over_shows_restart";
+    game_init();
+    /* Reach GAME_OVER via the same scenario as test_game.c's win test:
+     * BLUE buys a retriever, then runs through one quiet sim turn so the
+     * upgrade completes, then plays out turn 2 until the carrier returns
+     * to BLUE's receptacle. */
+    game_lock_in();              /* → PLAN_BLUE */
+    game_buy_creep_upgrade(0);   /* +1 BLUE retriever */
+    game_lock_in();              /* → SIMULATE turn 1 (no creeps) */
+    /* Drain turn 1 quietly. */
+    for (int i = 0; i < SIM_TICKS_PER_TURN * SIM_FRAMES_PER_TICK + 200; i++) {
+        game_frame();
+        if (game_get_state()->phase == PHASE_PLAN_RED) break;
+    }
+    game_lock_in(); game_lock_in(); /* → SIMULATE turn 2 */
+    /* Run until BLUE wins. */
+    for (int i = 0; i < SIM_TICKS_PER_TURN * SIM_FRAMES_PER_TICK; i++) {
+        game_frame();
+        if (game_get_state()->phase == PHASE_GAME_OVER) break;
+    }
+    CHECK(game_get_state()->phase == PHASE_GAME_OVER);
+
+    render_frame(game_get_state());
+    scan_buttons();
+    CHECK(present(BTN_RESTART));
+    CHECK(!present(BTN_LOCK_IN));
+    CHECK(!present(BTN_PLACE_GUNNER));
+    CHECK(!present(BTN_BUY_UPGRADE_0));
+    CHECK(!present(BTN_UPGRADE_TOWER));
+}
+
+int main(void) {
+    test_no_buttons_in_grid_area();
+    test_planning_buttons_visible();
+    test_buy_upgrade_button_disappears_after_purchase();
+    test_own_tower_selected_shows_upgrade_destroy();
+    test_enemy_tower_selected_no_upgrade_destroy();
+    test_simulation_phase_no_buttons();
+    test_game_over_shows_restart();
+    printf("%d assertions, %d failures\n", g_assertions, g_fail);
+    return g_fail ? 1 : 0;
+}

@@ -4,7 +4,12 @@
 /* Consumer-driven tests for creep pathing (docs/game-design.md §10). Tests drive the
  * public game_* API and inspect Thing state via game_get_state(). No internal
  * BFS / path-progress helpers are touched directly — they're covered
- * transitively. */
+ * transitively.
+ *
+ * NB: base retriever spawn count is currently 0 — to get a creep on the
+ * field the test buys a +1 retriever upgrade (research_turns=1) in turn 1
+ * and lets that turn's quiet sim phase elapse so the upgrade completes;
+ * turn 2's sim is then the one under test. */
 
 static int         g_assertions;
 static int         g_fail;
@@ -37,6 +42,25 @@ static void enter_sim(void) {
     game_lock_in();   /* PHASE_PLAN_BLUE → PHASE_SIMULATE  */
 }
 
+static void run_sim_to_completion(void) {
+    /* Step until the sim phase ends and we're back in PHASE_PLAN_RED.
+     * Bounded loop so a regression in phase advancement can't hang the test. */
+    for (int i = 0; i < SIM_TICKS_PER_TURN * SIM_FRAMES_PER_TICK + 200; i++) {
+        game_frame();
+        if (game_get_state()->phase == PHASE_PLAN_RED) return;
+    }
+}
+
+/* Run turn 1 quietly so the +1 retriever upgrade RED purchased completes,
+ * then enter the turn 2 sim where a retriever is guaranteed to spawn. */
+static void setup_turn2_with_red_retriever(void) {
+    game_buy_creep_upgrade(0); /* RED +1 Retriever, research_turns=1 */
+    enter_sim();
+    run_sim_to_completion();
+    /* now in PHASE_PLAN_RED, turn 2; upgrade is completed → 1 retriever per spawn */
+    enter_sim();
+}
+
 /* On the default map, RED's demarcated line runs straight from receptacle
  * (4,4) to enemy flag (25,4) along y=4. With no obstructions the retriever
  * should walk one cell per tick, and path_progress should tick up in lockstep
@@ -44,7 +68,7 @@ static void enter_sim(void) {
 static void test_line_following_unobstructed(void) {
     g_test = "line_following_unobstructed";
     game_init();
-    enter_sim();
+    setup_turn2_with_red_retriever();
     CHECK(game_get_state()->phase == PHASE_SIMULATE);
 
     for (int tick = 1; tick <= 5; tick++) {
@@ -58,8 +82,8 @@ static void test_line_following_unobstructed(void) {
     }
 }
 
-/* Tower placed on path index 6 forces a detour. RESOURCE is used so the
- * creep can't be shot during its detour. Invariants:
+/* Tower placed on path index 6 forces a detour. BLOCKER is used so it neither
+ * shoots the creep nor generates noise. Invariants:
  *   1. The placement is accepted (paths_valid sees an alternate route).
  *   2. The creep never occupies the blocked cell.
  *   3. path_progress eventually passes index 6 — the creep rejoins the line
@@ -67,12 +91,12 @@ static void test_line_following_unobstructed(void) {
 static void test_detour_around_blocking_tower(void) {
     g_test = "detour_around_blocking_tower";
     game_init();
-    game_set_placement(TOWER_RESOURCE);
+    game_set_placement(TOWER_BLOCKER);
     game_grid_click(10, 4);
     const GameState *s = game_get_state();
     CHECK(s->grid[10][4].thing_id != -1);
 
-    enter_sim();
+    setup_turn2_with_red_retriever();
     CHECK(s->phase == PHASE_SIMULATE);
 
     int max_progress = 0;
@@ -93,9 +117,9 @@ static void test_detour_around_blocking_tower(void) {
 static void test_path_progress_monotonic(void) {
     g_test = "path_progress_monotonic";
     game_init();
-    game_set_placement(TOWER_RESOURCE);
+    game_set_placement(TOWER_BLOCKER);
     game_grid_click(10, 4);
-    enter_sim();
+    setup_turn2_with_red_retriever();
 
     int last = 0;
     for (int tick = 1; tick <= 15; tick++) {

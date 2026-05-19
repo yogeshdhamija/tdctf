@@ -15,9 +15,9 @@ typedef struct {
 } TowerSpec;
 
 static const TowerSpec TOWERS[TOWER_TYPE_COUNT] = {
-    [TOWER_BLOCKER]   = { 10, 50, 0, 'B', "Blocker"   },
+    [TOWER_BLOCKER]   = { 20, 100, 1, 'B', "Blocker"   },
     [TOWER_GUNNER]   = { 30, 50, 0, 'G', "Gunner"   },
-    [TOWER_SLAMMER]  = { 50, 50, 0, 'S', "Slammer"  },
+    [TOWER_SLAMMER]  = { 50, 50, 2, 'S', "Slammer"  },
     [TOWER_RESOURCE] = { 80, 30, 3, 'R', "Resource" },
 };
 
@@ -216,7 +216,7 @@ void game_init(void) {
     }
 
     s.players[PLAYER_RED].resources       = 100;
-    s.players[PLAYER_RED].income_per_turn = 20;
+    s.players[PLAYER_RED].income_per_turn = 0;
     s.players[PLAYER_BLUE].resources       = 100;
     s.players[PLAYER_BLUE].income_per_turn = 20;
     init_creep_upgrades(&s.players[PLAYER_RED]);
@@ -371,7 +371,7 @@ void game_buy_creep_upgrade(int idx) {
 
 static int count_spawns(PlayerID p, CreepType ct) {
     int n = 0;
-    if (ct == CREEP_RETRIEVER) n = 1; /* base */
+    if (ct == CREEP_RETRIEVER) n = 0; /* base */
     for (int i = 0; i < s.players[p].creep_upgrade_count; i++) {
         CreepUpgrade *u = &s.players[p].creep_upgrades[i];
         if (!u->completed) continue;

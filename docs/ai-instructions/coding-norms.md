@@ -16,16 +16,37 @@ Think about how the machine actually executes your code. Prefer contiguous data 
 
 Good code cleanup means making code *shorter and more capable*, not splitting it into more pieces. When you clean up code, aim to compress: find redundancy, eliminate unnecessary steps, and make each line of code do more useful work. Do not confuse "more files" or "more functions" with "cleaner." A single 40-line function that reads clearly top to bottom is better than five 8-line functions that force you to jump around to understand what's happening. Code hygiene is important — but hygiene means compression, not decomposition.
 
-## Consumer-Driven Coding
+## Layered Testing
 
-TDD is not required, but testing is essential. Follow "consumer-driven coding" — all code changes are driven by tests written at the boundary of the interface being changed.
-This includes MVP code-- don't write any code that isn't intended to be tested.
+Every code change in every layer (game, render, platform) ships with a test that exercises the change. Two requirements on the test:
 
-### How it works
+- It exists by the time the change is committed.
+- It has been observed failing at some point during the change. A test that has never failed isn't a real test — it might be passing trivially.
 
-1. **Start from the consumer's perspective.** Before writing or changing any code, write a test at the boundary of the interface you're modifying. The test expresses what the consumer of that interface expects.
-   - Example: "I want the game to have creeps" → write a test at the game layer asserting that creeps exist → write code to make it pass.
+### When a test is not required
 
-2. **Be intentional when breaking code into smaller functions** DON'T be like Uncle Bob. Only extract functions where reuse is expected or multiple callers are desired. This is part of the philosophy — not premature abstraction, but deliberate interface design. When working on X, when you extract a function, be aware that you're creating a new interface with a level of abstraction of (X+1). 
+- **Self-evidently correct when running the game.** Copy edits, trivial renames, an obviously-wrong constant.
+- **Purely visual.** Colors, font sizes, spacing, animation timing, layout nudges. Reviewed by eye.
 
-3. **Smaller functions form a new interface layer.** You do not need to separately test extracted functions when they're covered by the original consumer test. However, if you later change the behavior of one of these functions, that change must be driven by a new test written at *that* function's interface's level of abstraction (X+1) — one layer down from the original test.
+When in doubt, write the test.
+
+### Test at the layer of abstraction of the change
+
+Every behavior lives at a particular **layer of abstraction**. The test for that behavior sits at the same layer — not above, not below.
+
+Worked example: "towers, previously immune, now take damage."
+
+1. Start at the feature layer. Write a test that asserts towers have HP and that an attack reduces HP. This is the level of abstraction of the feature itself.
+2. While implementing, you realize different creep types should deal different damage. The damage calculation is now a smaller, separable behavior — a *lower* layer of abstraction.
+3. Write a focused test against the damage calculation directly: given creep type and base damage, the result is X. It doesn't run a full simulation tick — it sits one layer below the feature test.
+
+A higher-layer test exercises **one** code path through the lower-layer behaviors it sits on top of. It is not exhaustive — that's not its job. When a lower-layer function gains a branch (or already has one), each branch is tested at the lower layer, not by piling more cases onto the higher-layer test.
+
+### Applying it
+
+- **New feature:** the first test goes at the feature's natural layer of abstraction, with enough cases to cover the feature's *behaviors* at that level (not its internal code paths).
+- **New branch in a sub-behavior:** drop a layer and write the test there. Don't duplicate it at the higher layer.
+- **Sub-behavior with a single code path, already exercised transitively by a higher-layer test:** leave it alone. Adding a lower-layer test would just duplicate coverage.
+- **Modifying an existing sub-behavior:** the change is driven by a test at *its* layer, not the layer above.
+
+This gives you focused failures (a broken test points at the layer that changed) and zero duplicate coverage (each code path is exercised by exactly one test at exactly one layer).
