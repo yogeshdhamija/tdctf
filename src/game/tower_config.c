@@ -8,11 +8,9 @@ static TowerCatalog g_catalog;
 
 const TowerCatalog *tower_config_get(void) { return &g_catalog; }
 
-static int tower_id_from_name(const char *n) {
-    if (!strcmp(n, "BLOCKER"))  return TOWER_BLOCKER;
-    if (!strcmp(n, "GUNNER"))   return TOWER_GUNNER;
-    if (!strcmp(n, "SLAMMER"))  return TOWER_SLAMMER;
-    if (!strcmp(n, "RESOURCE")) return TOWER_RESOURCE;
+int tower_config_lookup(const char *id) {
+    for (int i = 0; i < g_catalog.count; i++)
+        if (!strcmp(g_catalog.towers[i].id, id)) return i;
     return -1;
 }
 
@@ -24,27 +22,7 @@ static int parse_int(const char *s, int *out) {
     return 0;
 }
 
-static int set_field(TowerConfig *t, const char *key, const char *val) {
-    /* Per-level fields parse as `levelN.<sub>` with N in [1, TOWER_MAX_LEVELS]. */
-    if (!strncmp(key, "level", 5)
-        && key[5] >= '1' && key[5] <= ('0' + TOWER_MAX_LEVELS)
-        && key[6] == '.') {
-        TowerLevelStats *L = &t->level[key[5] - '1'];
-        const char *sub = key + 7;
-        if (!strcmp(sub, "dmg"))      return parse_int(val, &L->dmg);
-        if (!strcmp(sub, "range"))    return parse_int(val, &L->range);
-        if (!strcmp(sub, "aoe"))      return parse_int(val, &L->aoe);
-        if (!strcmp(sub, "slow"))     return parse_int(val, &L->slow);
-        if (!strcmp(sub, "cooldown")) return parse_int(val, &L->cooldown);
-        if (!strcmp(sub, "income"))   return parse_int(val, &L->income);
-        return -1;
-    }
-    if (!strcmp(key, "cost"))             return parse_int(val, &t->cost);
-    if (!strcmp(key, "hp"))               return parse_int(val, &t->hp);
-    if (!strcmp(key, "build_turns"))      return parse_int(val, &t->build_turns);
-    if (!strcmp(key, "upgrade_cost"))     return parse_int(val, &t->upgrade_cost);
-    if (!strcmp(key, "upgrade_build"))    return parse_int(val, &t->upgrade_build);
-    if (!strcmp(key, "upgrade_hp_bonus")) return parse_int(val, &t->upgrade_hp_bonus);
+static int set_tower_field(TowerConfig *t, const char *key, const char *val) {
     if (!strcmp(key, "code")) {
         if (strlen(val) != 1) return -1;
         t->code = val[0];
@@ -58,9 +36,24 @@ static int set_field(TowerConfig *t, const char *key, const char *val) {
     return -1;
 }
 
+static int set_level_field(TowerLevelStats *L, const char *key, const char *val) {
+    if (!strcmp(key, "cost"))        return parse_int(val, &L->cost);
+    if (!strcmp(key, "hp"))          return parse_int(val, &L->hp);
+    if (!strcmp(key, "build_turns")) return parse_int(val, &L->build_turns);
+    if (!strcmp(key, "dmg"))         return parse_int(val, &L->dmg);
+    if (!strcmp(key, "range"))       return parse_int(val, &L->range);
+    if (!strcmp(key, "aoe"))         return parse_int(val, &L->aoe);
+    if (!strcmp(key, "slow"))        return parse_int(val, &L->slow);
+    if (!strcmp(key, "cooldown"))    return parse_int(val, &L->cooldown);
+    if (!strcmp(key, "income"))      return parse_int(val, &L->income);
+    return -1;
+}
+
 int tower_config_load_from_string(const char *src) {
     memset(&g_catalog, 0, sizeof(g_catalog));
-    int current = -1;
+
+    int  current_tower = -1;
+    int  current_level = -1;     /* -1 = tower section, >=0 = level index */
     char line[256];
     const char *p = src;
 
@@ -74,11 +67,9 @@ int tower_config_load_from_string(const char *src) {
         while (*p && *p != '\n') p++;
         if (*p == '\n') p++;
 
-        /* Strip '#' comments. */
         char *hash = strchr(line, '#');
         if (hash) *hash = 0;
 
-        /* Tokenise on whitespace. */
         char *toks[4];
         int nt = 0;
         char *s = line;
@@ -93,13 +84,41 @@ int tower_config_load_from_string(const char *src) {
 
         if (!strcmp(toks[0], "tower")) {
             if (nt < 2) return -1;
-            current = tower_id_from_name(toks[1]);
-            if (current < 0) return -1;
+            if (tower_config_lookup(toks[1]) >= 0) return -1; /* duplicate */
+            if (g_catalog.count >= TOWER_MAX_COUNT) return -1;
+            TowerConfig *t = &g_catalog.towers[g_catalog.count];
+            memset(t, 0, sizeof(*t));
+            strncpy(t->id, toks[1], TOWER_ID_MAX - 1);
+            current_tower = g_catalog.count++;
+            current_level = -1;
             continue;
         }
-        if (current < 0 || nt < 2) return -1;
-        if (set_field(&g_catalog.towers[current], toks[0], toks[1]) != 0) return -1;
+        if (!strcmp(toks[0], "level")) {
+            if (nt < 3) return -1;
+            int idx = tower_config_lookup(toks[1]);
+            if (idx < 0) return -1;       /* level before tower */
+            int n_decl;
+            if (parse_int(toks[2], &n_decl) != 0) return -1;
+            TowerConfig *t = &g_catalog.towers[idx];
+            if (n_decl != t->level_count + 1) return -1;   /* must be sequential */
+            if (t->level_count >= TOWER_MAX_LEVELS) return -1;
+            current_tower = idx;
+            current_level = t->level_count++;
+            continue;
+        }
+
+        if (current_tower < 0 || nt < 2) return -1;
+        TowerConfig *t = &g_catalog.towers[current_tower];
+        int rc = (current_level < 0)
+                 ? set_tower_field(t, toks[0], toks[1])
+                 : set_level_field(&t->level[current_level], toks[0], toks[1]);
+        if (rc != 0) return -1;
     }
+
+    /* Every tower must have at least one level — placement reads level[0]. */
+    for (int i = 0; i < g_catalog.count; i++)
+        if (g_catalog.towers[i].level_count < 1) return -1;
+
     return 0;
 }
 

@@ -202,7 +202,7 @@ void render_frame(const GameState *gs) {
     if (gs->placement_intent >= 0 && (gs->phase == PHASE_PLAN_RED || gs->phase == PHASE_PLAN_BLUE)) {
         plat_fill_rect(0, 0, gw, 18, 0x222244);
         snprintf(buf, sizeof(buf), "Click grid to place %s  (click button again to cancel)",
-                 game_tower_name((TowerType)gs->placement_intent));
+                 game_tower_name(gs->placement_intent));
         plat_draw_text(6, 2, buf, 0xFFEE88);
     }
 
@@ -261,14 +261,13 @@ void render_frame(const GameState *gs) {
 
         plat_draw_text(sx + 10, line, "PLACE TOWER", 0xBBBBBB);
         line += 18;
-        for (int i = 0; i < TOWER_TYPE_COUNT; i++) {
-            snprintf(buf, sizeof(buf), "[%c] %-8s $%d",
-                     game_tower_code((TowerType)i),
-                     game_tower_name((TowerType)i),
-                     game_tower_cost((TowerType)i));
+        for (int i = 0; i < game_tower_count(); i++) {
+            int cost    = game_tower_cost(i);
             int active  = (gs->placement_intent == i);
-            int enabled = gs->players[p].resources >= game_tower_cost((TowerType)i);
-            draw_button(BTN_PLACE_BLOCKER + i, sx + 10, line,
+            int enabled = gs->players[p].resources >= cost;
+            snprintf(buf, sizeof(buf), "[%c] %-8s $%d",
+                     game_tower_code(i), game_tower_name(i), cost);
+            draw_button(BTN_PLACE_TOWER_BASE + i, sx + 10, line,
                         SIDEBAR_W - 20, 22, buf, active, enabled);
             line += 26;
         }
@@ -311,11 +310,12 @@ void render_frame(const GameState *gs) {
                 plat_draw_text(sx + 10, line, buf, 0x999999);
                 line += 22;
                 if (t->owner == p) {
-                    int up_cost = game_tower_cost(t->tower.type);
+                    int max_lvl = game_tower_max_level(t->tower.type);
+                    int up_cost = game_tower_upgrade_cost(t->tower.type, t->tower.level);
                     char ulbl[32];
                     snprintf(ulbl, sizeof(ulbl), "Upg $%d", up_cost);
                     int bw = (SIDEBAR_W - 30) / 2;
-                    int up_enabled = (t->tower.level < 2) && (t->tower.build_turns == 0)
+                    int up_enabled = (t->tower.level < max_lvl) && (t->tower.build_turns == 0)
                                      && (gs->players[p].resources >= up_cost);
                     draw_button(BTN_UPGRADE_TOWER, sx + 10, line, bw, 22, ulbl, 0, up_enabled);
                     draw_button(BTN_DESTROY_TOWER, sx + 20 + bw, line, bw, 22, "Destroy", 0, 1);

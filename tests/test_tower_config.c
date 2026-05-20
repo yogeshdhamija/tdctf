@@ -3,8 +3,8 @@
 #include <string.h>
 
 /* Parser tests at the tower_config layer. Sub-behaviors (per-key parsing,
- * comment stripping, multi-section state, error returns) are exercised
- * here directly so the higher-layer game tests don't have to. */
+ * comment stripping, section dispatch, error returns, level sequencing)
+ * are exercised here directly so the higher-layer game tests don't have to. */
 
 static int         g_assertions;
 static int         g_fail;
@@ -27,84 +27,199 @@ static void test_default_config_values(void) {
     g_test = "default_config_values";
     CHECK(tower_config_load_default() == 0);
     const TowerCatalog *c = tower_config_get();
+    CHECK(c->count == 4);
 
-    const TowerConfig *b = &c->towers[TOWER_BLOCKER];
-    CHECK(b->cost == 20 && b->hp == 100 && b->build_turns == 1);
-    CHECK(b->code == 'B' && !strcmp(b->name, "Blocker"));
-    CHECK(b->upgrade_cost == 20 && b->upgrade_build == 1 && b->upgrade_hp_bonus == 20);
+    int bi = tower_config_lookup("BLOCKER");
+    int gi = tower_config_lookup("GUNNER");
+    int si = tower_config_lookup("SLAMMER");
+    int ri = tower_config_lookup("RESOURCE");
+    CHECK(bi == 0 && gi == 1 && si == 2 && ri == 3);   /* declaration order */
+    CHECK(tower_config_lookup("FNORD") == -1);
+
+    const TowerConfig *b = &c->towers[bi];
+    CHECK(b->code == 'B' && !strcmp(b->name, "Blocker") && b->level_count == 2);
+    CHECK(b->level[0].cost == 20 && b->level[0].hp == 100 && b->level[0].build_turns == 1);
+    CHECK(b->level[1].cost == 20 && b->level[1].hp == 120 && b->level[1].build_turns == 1);
     CHECK(b->level[0].range == 0 && b->level[1].range == 0); /* no attack */
 
-    const TowerConfig *g = &c->towers[TOWER_GUNNER];
-    CHECK(g->cost == 30 && g->hp == 50 && g->build_turns == 0);
-    CHECK(g->code == 'G' && !strcmp(g->name, "Gunner"));
+    const TowerConfig *g = &c->towers[gi];
+    CHECK(g->code == 'G' && !strcmp(g->name, "Gunner") && g->level_count == 2);
+    CHECK(g->level[0].cost == 30 && g->level[0].hp == 50 && g->level[0].build_turns == 0);
     CHECK(g->level[0].dmg == 10 && g->level[0].range == 3 && g->level[0].cooldown == 2);
+    CHECK(g->level[1].cost == 30 && g->level[1].hp == 70 && g->level[1].build_turns == 1);
     CHECK(g->level[1].dmg == 15 && g->level[1].range == 4 && g->level[1].cooldown == 2);
 
-    const TowerConfig *sl = &c->towers[TOWER_SLAMMER];
-    CHECK(sl->cost == 50 && sl->hp == 50 && sl->build_turns == 2);
+    const TowerConfig *sl = &c->towers[si];
+    CHECK(sl->code == 'S' && sl->level_count == 2);
+    CHECK(sl->level[0].cost == 50 && sl->level[0].hp == 50 && sl->level[0].build_turns == 2);
     CHECK(sl->level[0].dmg == 5 && sl->level[0].aoe == 1 && sl->level[0].slow == 2);
-    CHECK(sl->level[1].dmg == 8 && sl->level[1].aoe == 2 && sl->level[1].slow == 2);
+    CHECK(sl->level[1].cost == 50 && sl->level[1].hp == 70 && sl->level[1].build_turns == 1);
+    CHECK(sl->level[1].dmg == 8 && sl->level[1].aoe == 2);
 
-    const TowerConfig *r = &c->towers[TOWER_RESOURCE];
-    CHECK(r->cost == 80 && r->hp == 30 && r->build_turns == 3);
-    CHECK(r->level[0].income == 10 && r->level[1].income == 20);
+    const TowerConfig *r = &c->towers[ri];
+    CHECK(r->code == 'R' && r->level_count == 2);
+    CHECK(r->level[0].cost == 80 && r->level[0].hp == 30 && r->level[0].build_turns == 3);
+    CHECK(r->level[0].income == 10);
+    CHECK(r->level[1].cost == 80 && r->level[1].hp == 50 && r->level[1].build_turns == 1);
+    CHECK(r->level[1].income == 20);
 }
 
-/* ── 2. Comments, blank lines, indentation are all ignored. ─────────── */
+/* ── 2. Comments, blank lines, and indentation are all ignored. ─────── */
 static void test_whitespace_and_comments(void) {
     g_test = "whitespace_and_comments";
     const char *src =
         "# leading comment\n"
         "\n"
         "tower GUNNER     # inline comment\n"
+        "  code G\n"
         "\n"
+        "level GUNNER 1\n"
         "      cost   33\n"
         "\thp\t44\n"
-        "  # commented-out: build_turns 99\n"
-        "  level1.dmg 7\n";
+        "  # commented-out: cost 999\n"
+        "  dmg 7\n";
     CHECK(tower_config_load_from_string(src) == 0);
-    const TowerConfig *g = &tower_config_get()->towers[TOWER_GUNNER];
-    CHECK(g->cost == 33);
-    CHECK(g->hp == 44);
-    CHECK(g->build_turns == 0);          /* defaulted, not 99 */
+    int gi = tower_config_lookup("GUNNER");
+    CHECK(gi >= 0);
+    const TowerConfig *g = &tower_config_get()->towers[gi];
+    CHECK(g->code == 'G');
+    CHECK(g->level_count == 1);
+    CHECK(g->level[0].cost == 33);          /* not 999 — the cost-999 line is a comment */
+    CHECK(g->level[0].hp == 44);
     CHECK(g->level[0].dmg == 7);
 }
 
-/* ── 3. Unknown keys, unknown sections, and orphan keys fail loudly. ─── */
-static void test_error_cases(void) {
-    g_test = "error_cases";
-    CHECK(tower_config_load_from_string("tower GUNNER\n  cost 10\n") == 0);
-
-    CHECK(tower_config_load_from_string("tower NOTATOWER\n") != 0);
-    CHECK(tower_config_load_from_string("cost 10\n") != 0);           /* no section */
-    CHECK(tower_config_load_from_string("tower GUNNER\n  fnord 1\n") != 0);
-    CHECK(tower_config_load_from_string("tower GUNNER\n  cost abc\n") != 0);
-    CHECK(tower_config_load_from_string("tower GUNNER\n  code BIG\n") != 0); /* not 1 char */
+/* ── 3. Any tower can have any combination of features. A single tower
+ *      that damages, AoEs, slows, AND generates income parses cleanly
+ *      and surfaces every field — there's no implicit "this kind of
+ *      tower doesn't have that field" rule. ───────────────────────── */
+static void test_combined_features(void) {
+    g_test = "combined_features";
+    const char *src =
+        "tower BUFFALO\n"
+        "  code U\n"
+        "  name Buffalo\n"
+        "level BUFFALO 1\n"
+        "  cost 75\n"
+        "  hp 60\n"
+        "  build_turns 2\n"
+        "  dmg 4\n"
+        "  range 3\n"
+        "  aoe 1\n"
+        "  slow 1\n"
+        "  cooldown 2\n"
+        "  income 5\n";
+    CHECK(tower_config_load_from_string(src) == 0);
+    int bi = tower_config_lookup("BUFFALO");
+    CHECK(bi >= 0);
+    const TowerConfig *b = &tower_config_get()->towers[bi];
+    CHECK(b->level_count == 1);
+    const TowerLevelStats *L = &b->level[0];
+    CHECK(L->cost == 75 && L->hp == 60 && L->build_turns == 2);
+    CHECK(L->dmg == 4 && L->range == 3 && L->aoe == 1);
+    CHECK(L->slow == 1 && L->cooldown == 2 && L->income == 5);
 }
 
-/* ── 4. Multiple tower sections, including a re-entry. The parser should
- *      route keys to whichever section was most recently named. ─────── */
-static void test_multiple_sections(void) {
-    g_test = "multiple_sections";
+/* ── 4. Each level fully redefines everything. Level 2 can flip every
+ *      stat — cost, hp, build_turns, attack profile — relative to L1. ─ */
+static void test_levels_independent(void) {
+    g_test = "levels_independent";
     const char *src =
-        "tower BLOCKER\n"
-        "  cost 1\n"
-        "tower GUNNER\n"
-        "  cost 2\n"
-        "tower BLOCKER\n"
-        "  hp 99\n";
+        "tower SHAPESHIFTER\n"
+        "  code Z\n"
+        "level SHAPESHIFTER 1\n"
+        "  cost 10\n"
+        "  hp 1\n"
+        "  range 1\n"
+        "  dmg 100\n"
+        "level SHAPESHIFTER 2\n"
+        "  cost 999\n"
+        "  hp 9999\n"
+        "  range 0\n"
+        "  dmg 0\n"
+        "  income 50\n";
     CHECK(tower_config_load_from_string(src) == 0);
-    const TowerCatalog *c = tower_config_get();
-    CHECK(c->towers[TOWER_BLOCKER].cost == 1);
-    CHECK(c->towers[TOWER_BLOCKER].hp == 99);
-    CHECK(c->towers[TOWER_GUNNER].cost == 2);
+    int idx = tower_config_lookup("SHAPESHIFTER");
+    const TowerConfig *t = &tower_config_get()->towers[idx];
+    CHECK(t->level_count == 2);
+    CHECK(t->level[0].cost == 10   && t->level[0].hp == 1    && t->level[0].dmg == 100);
+    CHECK(t->level[0].income == 0  && t->level[0].range == 1);
+    CHECK(t->level[1].cost == 999  && t->level[1].hp == 9999 && t->level[1].dmg == 0);
+    CHECK(t->level[1].income == 50 && t->level[1].range == 0);
+}
+
+/* ── 5. Structural error cases reject loudly. ───────────────────────── */
+static void test_error_cases(void) {
+    g_test = "error_cases";
+    /* Baseline: a minimal valid config. */
+    CHECK(tower_config_load_from_string(
+              "tower X\n  code X\nlevel X 1\n  cost 10\n  hp 1\n") == 0);
+
+    /* Key with no enclosing section. */
+    CHECK(tower_config_load_from_string("cost 10\n") != 0);
+
+    /* Unknown key inside a tower section. */
+    CHECK(tower_config_load_from_string(
+              "tower X\n  code X\n  fnord 1\nlevel X 1\n  cost 1\n") != 0);
+
+    /* Unknown key inside a level section. */
+    CHECK(tower_config_load_from_string(
+              "tower X\n  code X\nlevel X 1\n  fnord 1\n") != 0);
+
+    /* Non-integer where an int is expected. */
+    CHECK(tower_config_load_from_string(
+              "tower X\n  code X\nlevel X 1\n  cost abc\n") != 0);
+
+    /* `code` must be exactly one char. */
+    CHECK(tower_config_load_from_string(
+              "tower X\n  code BIG\nlevel X 1\n  cost 1\n") != 0);
+
+    /* Level before its tower is declared. */
+    CHECK(tower_config_load_from_string(
+              "level X 1\n  cost 1\n") != 0);
+
+    /* Duplicate tower name. */
+    CHECK(tower_config_load_from_string(
+              "tower X\n  code X\nlevel X 1\n  cost 1\n"
+              "tower X\n  code Y\n") != 0);
+
+    /* Level numbers must be sequential — declaring level 2 before level 1
+     * is an error. */
+    CHECK(tower_config_load_from_string(
+              "tower X\n  code X\nlevel X 2\n  cost 1\n") != 0);
+
+    /* Non-sequential level (skipping). */
+    CHECK(tower_config_load_from_string(
+              "tower X\n  code X\n"
+              "level X 1\n  cost 1\n"
+              "level X 3\n  cost 1\n") != 0);
+
+    /* A tower with no levels at all — placement code needs level[0]. */
+    CHECK(tower_config_load_from_string("tower X\n  code X\n") != 0);
+}
+
+/* ── 6. Tower order is preserved in the catalog (declaration order
+ *      becomes index order), and lookup resolves names to those indices. */
+static void test_declaration_order(void) {
+    g_test = "declaration_order";
+    const char *src =
+        "tower ZULU\n  code Z\nlevel ZULU 1\n  cost 1\n  hp 1\n"
+        "tower ALPHA\n  code A\nlevel ALPHA 1\n  cost 1\n  hp 1\n"
+        "tower MIKE\n  code M\nlevel MIKE 1\n  cost 1\n  hp 1\n";
+    CHECK(tower_config_load_from_string(src) == 0);
+    CHECK(tower_config_get()->count == 3);
+    CHECK(tower_config_lookup("ZULU") == 0);
+    CHECK(tower_config_lookup("ALPHA") == 1);
+    CHECK(tower_config_lookup("MIKE") == 2);
 }
 
 int main(void) {
     test_default_config_values();
     test_whitespace_and_comments();
+    test_combined_features();
+    test_levels_independent();
     test_error_cases();
-    test_multiple_sections();
+    test_declaration_order();
     printf("%d assertions, %d failures\n", g_assertions, g_fail);
     return g_fail ? 1 : 0;
 }

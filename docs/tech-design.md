@@ -58,7 +58,7 @@ The C code is organized into three layers with strict dependency direction: **Pl
 | `game.c/h` | Game state struct, init, phase transitions, turn loop, resources, flags, creep upgrades |
 | `thing.c/h` | Tagged-union Thing type, creation, tower/creep logic, combat, spawning, movement |
 | `grid.c/h` | Grid representation, zones, BFS pathfinding |
-| `tower_config.c/h` | Parses the embedded `data/towers.cfg` text into a `TowerCatalog`. All tower stats (cost, HP, build turns, per-level dmg/range/aoe/slow/cooldown/income, upgrade cost/build/HP-bonus) are read from here — no tower numbers are hardcoded in `game.c`. |
+| `tower_config.c/h` | Parses the embedded `data/towers.cfg` text into a `TowerCatalog`. Tower **types** are not hardcoded — towers are declared in the config file and assigned runtime integer ids in declaration order. Each level is its own section and fully redefines the tower's stats at that level (cost, hp, build_turns, dmg, range, aoe, slow, cooldown, income); any combination of stats is permitted, so a single tower can damage, AoE, slow, and generate income simultaneously. `game.c` looks up everything via `tower_config_get()`. The render layer iterates `game_tower_count()` to build the placement palette dynamically. |
 
 **Render layer** — includes game headers to read state. Calls abstract drawing primitives declared in `platform.h`. No platform-specific code.
 

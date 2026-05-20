@@ -17,13 +17,11 @@ typedef enum { PHASE_PLAN_RED, PHASE_PLAN_BLUE, PHASE_SIMULATE, PHASE_GAME_OVER 
 
 typedef enum { THING_NONE = 0, THING_TOWER, THING_CREEP } ThingType;
 
-typedef enum {
-    TOWER_BLOCKER,
-    TOWER_GUNNER,
-    TOWER_SLAMMER,
-    TOWER_RESOURCE,
-    TOWER_TYPE_COUNT
-} TowerType;
+/* Tower types are runtime ids assigned by tower_config at parse time, in the
+ * order towers appear in data/towers.cfg. Use game_tower_id("NAME") to
+ * resolve a config id to its index, and game_tower_count() for the live
+ * count. -1 means "no tower / unset". */
+typedef int TowerType;
 
 typedef enum {
     CREEP_RETRIEVER,
@@ -131,7 +129,11 @@ void             game_buy_creep_upgrade(int idx);
 void             game_lock_in(void);
 
 /* Helpers for render layer */
-int              game_tower_cost(TowerType t);
+int              game_tower_count(void);                    /* live tower count from catalog */
+int              game_tower_id(const char *name);           /* catalog id -> index, or -1 */
+int              game_tower_cost(TowerType t);              /* placement cost (level 1) */
+int              game_tower_upgrade_cost(TowerType t, int from_level); /* cost of from_level -> from_level+1; 0 if at max */
+int              game_tower_max_level(TowerType t);         /* number of levels defined */
 const char      *game_tower_name(TowerType t);
 char             game_tower_code(TowerType t);
 PlayerID         game_planning_player(void);                /* meaningful only in planning */

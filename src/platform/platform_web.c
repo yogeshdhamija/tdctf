@@ -117,12 +117,12 @@ void on_click(int px, int py) {
         return;
     }
     int btn = render_button_at(px, py);
+    if (btn >= BTN_PLACE_TOWER_BASE) {
+        game_set_placement(btn - BTN_PLACE_TOWER_BASE);
+        return;
+    }
     switch (btn) {
         case BTN_LOCK_IN:         game_lock_in();                       break;
-        case BTN_PLACE_BLOCKER:   game_set_placement(TOWER_BLOCKER);     break;
-        case BTN_PLACE_GUNNER:    game_set_placement(TOWER_GUNNER);     break;
-        case BTN_PLACE_SLAMMER:   game_set_placement(TOWER_SLAMMER);    break;
-        case BTN_PLACE_RESOURCE:  game_set_placement(TOWER_RESOURCE);   break;
         case BTN_UPGRADE_TOWER:   game_upgrade_selected();              break;
         case BTN_DESTROY_TOWER:   game_destroy_selected();              break;
         case BTN_BUY_UPGRADE_0:   game_buy_creep_upgrade(0);            break;

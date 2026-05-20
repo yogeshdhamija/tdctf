@@ -12,7 +12,21 @@ static const TowerConfig *spec(TowerType t) {
     return &tower_config_get()->towers[t];
 }
 
-int         game_tower_cost(TowerType t) { return spec(t)->cost; }
+int  game_tower_count(void)         { return tower_config_get()->count; }
+int  game_tower_id(const char *n)   { return tower_config_lookup(n); }
+int  game_tower_max_level(TowerType t) { return spec(t)->level_count; }
+
+/* Placement cost = cost to enter level 1. */
+int  game_tower_cost(TowerType t)   { return spec(t)->level[0].cost; }
+
+/* Upgrade cost = cost to enter (from_level + 1). Returns 0 if already at
+ * the top, so callers can use the value as "is upgrading possible" too. */
+int  game_tower_upgrade_cost(TowerType t, int from_level) {
+    const TowerConfig *cfg = spec(t);
+    if (from_level < 1 || from_level >= cfg->level_count) return 0;
+    return cfg->level[from_level].cost;
+}
+
 const char *game_tower_name(TowerType t) { return spec(t)->name; }
 char        game_tower_code(TowerType t) { return spec(t)->code; }
 
@@ -253,9 +267,9 @@ static int placement_valid(int gx, int gy, PlayerID p) {
 
 static void try_place(int gx, int gy, TowerType type) {
     PlayerID p = game_planning_player();
-    const TowerConfig *cfg = spec(type);
-    if (s.players[p].resources < cfg->cost) { set_status("Not enough resources"); return; }
-    if (!placement_valid(gx, gy, p))        { set_status("Invalid placement");    return; }
+    const TowerLevelStats *l1 = &spec(type)->level[0];
+    if (s.players[p].resources < l1->cost) { set_status("Not enough resources"); return; }
+    if (!placement_valid(gx, gy, p))       { set_status("Invalid placement");    return; }
     int id = alloc_thing();
     if (id < 0) return;
     Thing *t = &s.things[id];
@@ -263,14 +277,14 @@ static void try_place(int gx, int gy, TowerType type) {
     t->tag    = THING_TOWER;
     t->owner  = p;
     t->x      = gx; t->y = gy;
-    t->hp     = cfg->hp;
-    t->max_hp = cfg->hp;
+    t->hp     = l1->hp;
+    t->max_hp = l1->hp;
     t->alive  = 1;
     t->tower.type        = type;
     t->tower.level       = 1;
-    t->tower.build_turns = cfg->build_turns;
+    t->tower.build_turns = l1->build_turns;
     s.grid[gx][gy].thing_id = id;
-    s.players[p].resources -= cfg->cost;
+    s.players[p].resources -= l1->cost;
     s.placement_intent = -1;
     s.selected_x = gx; s.selected_y = gy;
 }
@@ -287,7 +301,7 @@ void game_grid_click(int gx, int gy) {
 
 void game_set_placement(int type) {
     if (!planning()) return;
-    if (type < 0 || type >= TOWER_TYPE_COUNT) { s.placement_intent = -1; return; }
+    if (type < 0 || type >= tower_config_get()->count) { s.placement_intent = -1; return; }
     if (s.placement_intent == type) {
         s.placement_intent = -1;
     } else {
@@ -302,15 +316,18 @@ void game_upgrade_selected(void) {
     if (id < 0) { set_status("No tower selected"); return; }
     Thing *t = &s.things[id];
     PlayerID p = game_planning_player();
-    if (t->owner != p)              { set_status("Not your tower");      return; }
-    if (t->tower.level >= TOWER_MAX_LEVELS) { set_status("Max level");    return; }
-    if (t->tower.build_turns > 0)   { set_status("Still building");      return; }
     const TowerConfig *cfg = spec(t->tower.type);
-    if (s.players[p].resources < cfg->upgrade_cost) { set_status("Not enough resources"); return; }
-    s.players[p].resources -= cfg->upgrade_cost;
+    if (t->owner != p)                            { set_status("Not your tower");      return; }
+    if (t->tower.level >= cfg->level_count)       { set_status("Max level");           return; }
+    if (t->tower.build_turns > 0)                 { set_status("Still building");      return; }
+    /* Upgrading from level N → N+1: read the next level's stats. The array
+     * is 0-indexed, so level N+1 lives at cfg->level[t->tower.level]. */
+    const TowerLevelStats *next = &cfg->level[t->tower.level];
+    if (s.players[p].resources < next->cost)      { set_status("Not enough resources"); return; }
+    s.players[p].resources -= next->cost;
     t->tower.level++;
-    t->tower.build_turns = cfg->upgrade_build;
-    t->max_hp += cfg->upgrade_hp_bonus;
+    t->tower.build_turns = next->build_turns;
+    t->max_hp = next->hp;
     t->hp = t->max_hp;
 }
 

@@ -1,53 +1,56 @@
 #ifndef TOWER_CONFIG_H
 #define TOWER_CONFIG_H
 
-#include "game.h"
-
 /* Tower stats loaded from data/towers.cfg. The default config is embedded
  * into the binary at build time (see Makefile + tower_config_data.h). Both
- * the WASM build and native tests see exactly the same bytes. */
+ * the WASM build and native tests see exactly the same bytes.
+ *
+ * Tower types are NOT hardcoded. Towers are declared in the config and
+ * assigned runtime ids in declaration order. The catalog's `count` field
+ * is the live tower count; tower_config_lookup() resolves a config id
+ * (e.g. "GUNNER") to its index.
+ *
+ * Levels are independent: every level redefines cost, hp, build_turns,
+ * and all combat/income stats. There is no "delta from previous level"
+ * semantics — each level is a complete spec. */
 
-#define TOWER_MAX_LEVELS 2
+#define TOWER_MAX_COUNT  16
+#define TOWER_MAX_LEVELS 8
 #define TOWER_NAME_MAX   16
+#define TOWER_ID_MAX     16
 
 typedef struct {
+    int cost;          /* paid to ENTER this level: placement cost for L1,
+                        * upgrade cost from L(N-1) for L(N>1). */
+    int hp;            /* absolute max HP at this level. */
+    int build_turns;   /* construction time when entering this level. */
     int dmg;
     int range;
     int aoe;
     int slow;
     int cooldown;
-    int income;
+    int income;        /* per-turn resource generation while at this level. */
 } TowerLevelStats;
 
 typedef struct {
-    int             cost;
-    int             hp;
-    int             build_turns;
-    char            code;
-    char            name[TOWER_NAME_MAX];
-    int             upgrade_cost;
-    int             upgrade_build;
-    int             upgrade_hp_bonus;
+    char            id[TOWER_ID_MAX];        /* config identifier, e.g. "GUNNER" */
+    char            name[TOWER_NAME_MAX];    /* display name */
+    char            code;                    /* one-char glyph drawn on the grid */
+    int             level_count;             /* number of defined levels (>= 1) */
     TowerLevelStats level[TOWER_MAX_LEVELS];
 } TowerConfig;
 
 typedef struct {
-    TowerConfig towers[TOWER_TYPE_COUNT];
+    int         count;                       /* number of towers defined */
+    TowerConfig towers[TOWER_MAX_COUNT];
 } TowerCatalog;
 
-/* Returns the live catalog. Always non-NULL; values are whatever the most
- * recent successful tower_config_load_* call produced (or zeros before
- * any load). */
 const TowerCatalog *tower_config_get(void);
+int  tower_config_load_default(void);
+int  tower_config_load_from_string(const char *src);
 
-/* Load the catalog from the embedded default config. Returns 0 on success.
- * Called by game_init(); tests can call it directly. */
-int tower_config_load_default(void);
-
-/* Load the catalog from an arbitrary string. Useful for tests that exercise
- * the parser. Returns 0 on success, nonzero on parse error. On failure the
- * catalog is left in an unspecified state — callers should reload defaults
- * or treat the catalog as invalid. */
-int tower_config_load_from_string(const char *src);
+/* Returns the index of the tower with the given config id, or -1 if not
+ * found. Useful for tests that want to refer to a specific tower by name. */
+int  tower_config_lookup(const char *id);
 
 #endif

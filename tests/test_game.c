@@ -131,12 +131,12 @@ static void test_tower_placement_basics(void) {
     game_init();
     const GameState *s = game_get_state();
 
-    game_set_placement(TOWER_GUNNER);
-    CHECK(s->placement_intent == TOWER_GUNNER);
+    game_set_placement(game_tower_id("GUNNER"));
+    CHECK(s->placement_intent == game_tower_id("GUNNER"));
 
     game_grid_click(6, 4);
     /* placed: cost deducted, intent cleared, cell occupied. */
-    CHECK(s->players[PLAYER_RED].resources == 100 - game_tower_cost(TOWER_GUNNER));
+    CHECK(s->players[PLAYER_RED].resources == 100 - game_tower_cost(game_tower_id("GUNNER")));
     CHECK(s->placement_intent == -1);
     int id = tower_id_at(6, 4);
     CHECK(id >= 0);
@@ -144,7 +144,7 @@ static void test_tower_placement_basics(void) {
     CHECK(s->things[id].owner == PLAYER_RED);
     CHECK(s->things[id].alive == 1);
     CHECK(s->things[id].hp == s->things[id].max_hp);
-    CHECK(s->things[id].tower.type == TOWER_GUNNER);
+    CHECK(s->things[id].tower.type == game_tower_id("GUNNER"));
     CHECK(s->things[id].tower.level == 1);
     /* Selected cursor moves to placed tower. */
     CHECK(s->selected_x == 6 && s->selected_y == 4);
@@ -161,7 +161,7 @@ static void test_placement_zone_restrictions(void) {
      * a failed click — re-calling game_set_placement with the same type would
      * TOGGLE it off (see game_set_placement), so the follow-up click reuses
      * the still-active intent. */
-    game_set_placement(TOWER_GUNNER);
+    game_set_placement(game_tower_id("GUNNER"));
     game_grid_click(25, 10);
     CHECK(tower_id_at(25, 10) == -1);
     CHECK(s->players[PLAYER_RED].resources == 100);
@@ -175,7 +175,7 @@ static void test_placement_zone_restrictions(void) {
     game_lock_in();
     CHECK(s->phase == PHASE_PLAN_BLUE);
     CHECK(s->placement_intent == -1);
-    game_set_placement(TOWER_GUNNER);
+    game_set_placement(game_tower_id("GUNNER"));
     game_grid_click(3, 10);
     CHECK(tower_id_at(3, 10) == -1);
     CHECK(s->players[PLAYER_BLUE].resources == 100);
@@ -189,24 +189,24 @@ static void test_placement_insufficient_resources(void) {
     const GameState *s = game_get_state();
 
     /* Cost 80 R tower can fit once (100→20), the second placement fails. */
-    game_set_placement(TOWER_RESOURCE);
+    game_set_placement(game_tower_id("RESOURCE"));
     game_grid_click(5, 6);
     CHECK(tower_id_at(5, 6) >= 0);
     CHECK(s->players[PLAYER_RED].resources == 20);
 
-    game_set_placement(TOWER_RESOURCE);
+    game_set_placement(game_tower_id("RESOURCE"));
     game_grid_click(6, 6);
     CHECK(tower_id_at(6, 6) == -1);
     CHECK(s->players[PLAYER_RED].resources == 20);
 
     /* Same cell re-click while intent is set: cell already occupied, rejected. */
-    game_set_placement(TOWER_GUNNER);
+    game_set_placement(game_tower_id("GUNNER"));
     game_grid_click(5, 6);
     /* placement_intent stays set since try_place returns early on invalid cell;
      * the original tower is still the only one at (5,6). */
     int id = tower_id_at(5, 6);
     CHECK(id >= 0);
-    CHECK(s->things[id].tower.type == TOWER_RESOURCE);
+    CHECK(s->things[id].tower.type == game_tower_id("RESOURCE"));
 }
 
 /* ── 6. Tower upgrade ───────────────────────────────────────────────── */
@@ -217,21 +217,21 @@ static void test_tower_upgrade(void) {
     const GameState *s = game_get_state();
 
     /* Gunner has build_turns=0 so it's eligible to upgrade immediately. */
-    game_set_placement(TOWER_GUNNER);
+    game_set_placement(game_tower_id("GUNNER"));
     game_grid_click(6, 4);
     int id = tower_id_at(6, 4);
     CHECK(id >= 0);
-    int hp_before    = s->things[id].max_hp;
     int res_before   = s->players[PLAYER_RED].resources;
-    int cost         = game_tower_cost(TOWER_GUNNER);
+    int up_cost      = game_tower_upgrade_cost(game_tower_id("GUNNER"), 1);
 
     /* selected_x/y is on the tower already (set by placement). */
     game_upgrade_selected();
     CHECK(s->things[id].tower.level == 2);
     CHECK(s->things[id].tower.build_turns == 1);
-    CHECK(s->things[id].max_hp == hp_before + 20);
+    /* Level 2 GUNNER has max HP 70 in data/towers.cfg (vs 50 at level 1). */
+    CHECK(s->things[id].max_hp == 70);
     CHECK(s->things[id].hp == s->things[id].max_hp);
-    CHECK(s->players[PLAYER_RED].resources == res_before - cost);
+    CHECK(s->players[PLAYER_RED].resources == res_before - up_cost);
 
     /* Already at max level → upgrade is a no-op. */
     int res_after = s->players[PLAYER_RED].resources;
@@ -246,7 +246,7 @@ static void test_tower_upgrade_rejects_enemy(void) {
     const GameState *s = game_get_state();
 
     /* RED places a gunner. Switch to BLUE planning and try to upgrade it. */
-    game_set_placement(TOWER_GUNNER);
+    game_set_placement(game_tower_id("GUNNER"));
     game_grid_click(6, 4);
     int id = tower_id_at(6, 4);
     int level_before = s->things[id].tower.level;
@@ -266,7 +266,7 @@ static void test_tower_destroy(void) {
     game_init();
     const GameState *s = game_get_state();
 
-    game_set_placement(TOWER_GUNNER);
+    game_set_placement(game_tower_id("GUNNER"));
     game_grid_click(6, 4);
     int id = tower_id_at(6, 4);
     CHECK(id >= 0);
@@ -282,7 +282,7 @@ static void test_tower_destroy_rejects_enemy(void) {
     game_init();
     const GameState *s = game_get_state();
 
-    game_set_placement(TOWER_GUNNER);
+    game_set_placement(game_tower_id("GUNNER"));
     game_grid_click(6, 4);
     int id = tower_id_at(6, 4);
 
@@ -363,8 +363,8 @@ static void test_resource_tower_income(void) {
     g_test = "resource_tower_income";
     game_init();
     const GameState *s = game_get_state();
-    /* TOWER_RESOURCE: build_turns=3, +10/turn when built. */
-    game_set_placement(TOWER_RESOURCE);
+    /* game_tower_id("RESOURCE"): build_turns=3, +10/turn when built. */
+    game_set_placement(game_tower_id("RESOURCE"));
     game_grid_click(5, 10);
     int id = tower_id_at(5, 10);
     CHECK(id >= 0);
@@ -405,7 +405,7 @@ static void test_gunner_damages_creep(void) {
 
     /* RED places gunner at (4,14): RED zone, off BLUE's y=15 path, range 3
      * reaches the BLUE retriever as it walks past y=15 toward (4,15). */
-    game_set_placement(TOWER_GUNNER);
+    game_set_placement(game_tower_id("GUNNER"));
     game_grid_click(4, 14);
     CHECK(tower_id_at(4, 14) >= 0);
 
@@ -445,7 +445,7 @@ static void test_slammer_slows_creep(void) {
     /* Slammer has build_turns=2 so we burn 2 turns before its effect lands.
      * Place the slammer first, then BLUE only buys the retriever upgrade
      * on a later turn so the creep arrives after the slammer is built. */
-    game_set_placement(TOWER_SLAMMER);
+    game_set_placement(game_tower_id("SLAMMER"));
     game_grid_click(4, 14);
     int sid = tower_id_at(4, 14);
     CHECK(sid >= 0);
@@ -488,7 +488,7 @@ static void test_siege_attacks_tower(void) {
     /* RED places BLOCKER at (5,15) — on BLUE's path, RED zone. BLUE siege
      * creeps walking left will be adjacent to the blocker (at (6,15) etc.)
      * and attack it. */
-    game_set_placement(TOWER_BLOCKER);
+    game_set_placement(game_tower_id("BLOCKER"));
     game_grid_click(5, 15);
     int bid = tower_id_at(5, 15);
     CHECK(bid >= 0);
@@ -585,7 +585,7 @@ static void test_flag_drop_on_death(void) {
      * step lands within range again and the second shot kills it carrying
      * the flag, leaving a drop at (4,16). (Two gunners would kill before
      * pickup, leaving the flag at_home.) */
-    game_set_placement(TOWER_GUNNER);
+    game_set_placement(game_tower_id("GUNNER"));
     game_grid_click(5, 15);
     CHECK(tower_id_at(5, 15) >= 0);
 
@@ -623,18 +623,18 @@ static void test_placement_validity(void) {
     const GameState *s = game_get_state();
 
     /* Receptacle cell rejected. */
-    game_set_placement(TOWER_GUNNER);
+    game_set_placement(game_tower_id("GUNNER"));
     game_grid_click(s->receptacle_x[PLAYER_RED], s->receptacle_y[PLAYER_RED]);
     CHECK(s->grid[s->receptacle_x[PLAYER_RED]][s->receptacle_y[PLAYER_RED]].thing_id == -1);
 
     /* At-home flag cell rejected. */
-    game_set_placement(TOWER_GUNNER);
+    game_set_placement(game_tower_id("GUNNER"));
     game_grid_click(s->flags[PLAYER_RED].x, s->flags[PLAYER_RED].y);
     CHECK(s->grid[s->flags[PLAYER_RED].x][s->flags[PLAYER_RED].y].thing_id == -1);
 
     /* A line cell with alternate routes around it succeeds. (10,10) sits
      * on RED's outbound y=10 corridor; the rest of the grid is wide open. */
-    game_set_placement(TOWER_GUNNER);
+    game_set_placement(game_tower_id("GUNNER"));
     game_grid_click(10, 10);
     CHECK(s->grid[10][10].thing_id != -1);
 }

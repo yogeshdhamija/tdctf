@@ -1,5 +1,6 @@
 #include "render/render.h"
 #include "game/game.h"
+#include "game/tower_config.h"
 #include "platform/platform.h"
 #include <stdio.h>
 #include <string.h>
@@ -70,8 +71,11 @@ static const char *g_test;
 
 /* Sweep the canvas after a render_frame and record which ButtonIDs are
  * currently hittable anywhere. Buttons are all >= 20x18 px, so the sweep
- * stride is fine at 4 px. */
-static int g_present[16];
+ * stride is fine at 4 px. The presence table is sized to cover both the
+ * fixed enum range (< BTN_PLACE_TOWER_BASE) and the dynamic tower-placement
+ * range (BTN_PLACE_TOWER_BASE .. + TOWER_MAX_COUNT). */
+#define PRESENT_SIZE (BTN_PLACE_TOWER_BASE + TOWER_MAX_COUNT)
+static unsigned char g_present[PRESENT_SIZE];
 static void scan_buttons(void) {
     memset(g_present, 0, sizeof(g_present));
     int gw = 30 * CELL_SIZE, gh = 20 * CELL_SIZE;
@@ -79,7 +83,7 @@ static void scan_buttons(void) {
     for (int y = 0; y < gh; y += 4)
         for (int x = 0; x < total_w; x += 4) {
             int id = render_button_at(x, y);
-            if (id > 0 && id < 16) g_present[id] = 1;
+            if (id > 0 && id < PRESENT_SIZE) g_present[id] = 1;
         }
 }
 
@@ -103,17 +107,17 @@ static void test_no_buttons_in_grid_area(void) {
 }
 
 /* In PLAN_RED with no purchases yet, the sidebar shows the Lock In button,
- * all four PLACE_* buttons, and all four BUY_UPGRADE_* buttons. */
+ * a placement button for every tower in the catalog, and all four
+ * BUY_UPGRADE_* buttons. */
 static void test_planning_buttons_visible(void) {
     g_test = "planning_buttons_visible";
     game_init();
     render_frame(game_get_state());
     scan_buttons();
     CHECK(present(BTN_LOCK_IN));
-    CHECK(present(BTN_PLACE_BLOCKER));
-    CHECK(present(BTN_PLACE_GUNNER));
-    CHECK(present(BTN_PLACE_SLAMMER));
-    CHECK(present(BTN_PLACE_RESOURCE));
+    CHECK(game_tower_count() > 0);
+    for (int i = 0; i < game_tower_count(); i++)
+        CHECK(present(BTN_PLACE_TOWER_BASE + i));
     CHECK(present(BTN_BUY_UPGRADE_0));
     CHECK(present(BTN_BUY_UPGRADE_1));
     CHECK(present(BTN_BUY_UPGRADE_2));
@@ -149,7 +153,7 @@ static void test_own_tower_selected_shows_upgrade_destroy(void) {
     g_test = "own_tower_selected_shows_upgrade_destroy";
     game_init();
     /* Place a RED gunner — placement also sets selected_x/y to the new tower. */
-    game_set_placement(TOWER_GUNNER);
+    game_set_placement(game_tower_id("GUNNER"));
     game_grid_click(6, 4);
 
     render_frame(game_get_state());
@@ -163,7 +167,7 @@ static void test_own_tower_selected_shows_upgrade_destroy(void) {
 static void test_enemy_tower_selected_no_upgrade_destroy(void) {
     g_test = "enemy_tower_selected_no_upgrade_destroy";
     game_init();
-    game_set_placement(TOWER_GUNNER);
+    game_set_placement(game_tower_id("GUNNER"));
     game_grid_click(6, 4);
     /* Hand off to BLUE planning and re-select RED's tower. */
     game_lock_in();
@@ -185,10 +189,8 @@ static void test_simulation_phase_no_buttons(void) {
     render_frame(game_get_state());
     scan_buttons();
     CHECK(!present(BTN_LOCK_IN));
-    CHECK(!present(BTN_PLACE_BLOCKER));
-    CHECK(!present(BTN_PLACE_GUNNER));
-    CHECK(!present(BTN_PLACE_SLAMMER));
-    CHECK(!present(BTN_PLACE_RESOURCE));
+    for (int i = 0; i < game_tower_count(); i++)
+        CHECK(!present(BTN_PLACE_TOWER_BASE + i));
     CHECK(!present(BTN_BUY_UPGRADE_0));
     CHECK(!present(BTN_UPGRADE_TOWER));
     CHECK(!present(BTN_DESTROY_TOWER));
@@ -302,7 +304,7 @@ static void test_game_over_shows_restart(void) {
     scan_buttons();
     CHECK(present(BTN_RESTART));
     CHECK(!present(BTN_LOCK_IN));
-    CHECK(!present(BTN_PLACE_GUNNER));
+    CHECK(!present(BTN_PLACE_TOWER_BASE + game_tower_id("GUNNER")));
     CHECK(!present(BTN_BUY_UPGRADE_0));
     CHECK(!present(BTN_UPGRADE_TOWER));
 }
