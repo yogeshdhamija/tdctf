@@ -27,11 +27,11 @@ typedef enum { THING_NONE = 0, THING_TOWER, THING_CREEP } ThingType;
  * count. -1 means "no tower / unset". */
 typedef int TowerType;
 
-typedef enum {
-    CREEP_RETRIEVER,
-    CREEP_SIEGE,
-    CREEP_TYPE_COUNT
-} CreepType;
+/* Creep types are runtime ids assigned by creep_config at parse time, in
+ * the order types appear in data/creep_upgrades.cfg. Use
+ * game_creep_type_id("NAME") to resolve a config id to its index. -1
+ * means "no creep type / unset". */
+typedef int CreepType;
 
 typedef enum { ZONE_NEUTRAL, ZONE_RED, ZONE_BLUE, ZONE_DEBRIS } ZoneType;
 
@@ -65,10 +65,10 @@ typedef struct {
 } Cell;
 
 /* Per-player runtime state for one creep upgrade. The static spec
- * (cost, research_turns, add_retrievers, add_siege, description) lives in
+ * (cost, research_turns, spawn_type, spawn_count, description) lives in
  * the catalog at data/creep_upgrades.cfg, accessed via game_creep_upgrade_*
  * accessors. The array index into Player.creep_upgrades matches the
- * catalog index. */
+ * catalog upgrade index. */
 typedef struct {
     int turns_remaining;
     int purchased;
@@ -144,6 +144,14 @@ int              game_tower_upgrade_turns(TowerType t, int from_level);
 int              game_tower_max_level(TowerType t);         /* number of levels defined */
 const char      *game_tower_name(TowerType t);
 char             game_tower_code(TowerType t);
+
+/* Creep type catalog accessors. CreepType is an index into the catalog
+ * at data/creep_upgrades.cfg. */
+int              game_creep_type_count(void);
+int              game_creep_type_id(const char *name);     /* -1 if not found */
+char             game_creep_type_code(CreepType t);
+int              game_creep_type_can_carry_flag(CreepType t);
+int              game_creep_type_melee_damage(CreepType t);
 
 /* Creep upgrade catalog accessors. Per-player dynamic state (purchased /
  * completed / turns_remaining) lives on Player.creep_upgrades[idx]. */

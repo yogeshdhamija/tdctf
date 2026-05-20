@@ -40,13 +40,22 @@ int game_tower_upgrade_turns(TowerType t, int from_level) {
 const char *game_tower_name(TowerType t) { return spec(t)->name; }
 char        game_tower_code(TowerType t) { return spec(t)->code; }
 
-/* Creep upgrade catalog lookups. The catalog is global; per-player runtime
- * state (purchased / completed / turns_remaining) is on Player.creep_upgrades
- * indexed parallel to the catalog. */
+/* Creep catalog lookups. The catalog is global; per-player runtime state
+ * (purchased / completed / turns_remaining) is on Player.creep_upgrades
+ * indexed parallel to the catalog's upgrades array. */
+static const CreepTypeConfig    *ct_spec(CreepType t) {
+    return &creep_config_get()->types[t];
+}
 static const CreepUpgradeConfig *cu_spec(int idx) {
     return &creep_config_get()->upgrades[idx];
 }
-int  game_creep_upgrade_count(void)               { return creep_config_get()->count; }
+int  game_creep_type_count(void)             { return creep_config_get()->type_count; }
+int  game_creep_type_id(const char *name)    { return creep_config_lookup_type(name); }
+char game_creep_type_code(CreepType t)       { return ct_spec(t)->code; }
+int  game_creep_type_can_carry_flag(CreepType t) { return ct_spec(t)->can_carry_flag; }
+int  game_creep_type_melee_damage(CreepType t)   { return ct_spec(t)->melee_damage; }
+
+int  game_creep_upgrade_count(void)               { return creep_config_get()->upgrade_count; }
 int  game_creep_upgrade_cost(int idx)             { return cu_spec(idx)->cost; }
 int  game_creep_upgrade_research_turns(int idx)   { return cu_spec(idx)->research_turns; }
 const char *game_creep_upgrade_description(int idx) { return cu_spec(idx)->description; }
@@ -196,7 +205,7 @@ static int paths_valid(void) {
  * dynamic state for catalog upgrade i. Static spec (cost, research_turns,
  * description, ...) is read directly from the catalog at use time. */
 static void init_creep_upgrades(Player *p) {
-    int n = creep_config_get()->count;
+    int n = creep_config_get()->upgrade_count;
     if (n > MAX_CREEP_UPGRADES) n = MAX_CREEP_UPGRADES;
     p->creep_upgrade_count = n;
     for (int i = 0; i < n; i++) memset(&p->creep_upgrades[i], 0, sizeof(p->creep_upgrades[i]));
@@ -390,29 +399,17 @@ void game_buy_creep_upgrade(int idx) {
 
 /* ── Simulation ─────────────────────────────────────────── */
 
-static int count_spawns(PlayerID p, CreepType ct) {
-    int n = 0;
-    if (ct == CREEP_RETRIEVER) n = 0; /* base */
-    for (int i = 0; i < s.players[p].creep_upgrade_count; i++) {
-        const CreepUpgrade *u = &s.players[p].creep_upgrades[i];
-        if (!u->completed) continue;
-        const CreepUpgradeConfig *cfg = cu_spec(i);
-        if (ct == CREEP_RETRIEVER) n += cfg->add_retrievers;
-        else if (ct == CREEP_SIEGE) n += cfg->add_siege;
-    }
-    return n;
-}
-
 static void spawn_creep(PlayerID p, CreepType ct) {
     int id = alloc_thing();
     if (id < 0) return;
+    const CreepTypeConfig *cspec = ct_spec(ct);
     Thing *t = &s.things[id];
     memset(t, 0, sizeof(*t));
     t->tag    = THING_CREEP;
     t->owner  = p;
     t->x      = s.spawn_x[p];
     t->y      = s.spawn_y[p];
-    t->hp     = (ct == CREEP_SIEGE) ? 40 : 20;
+    t->hp     = cspec->hp;
     t->max_hp = t->hp;
     t->alive  = 1;
     t->creep.type = ct;
@@ -427,11 +424,18 @@ static void start_simulation(void) {
         Thing *t = &s.things[i];
         if (t->tag == THING_TOWER) { t->beam_ttl = 0; t->tower.cooldown = 0; }
     }
+    /* For each player, spawn the configured count of the configured creep
+     * type for every completed upgrade. Upgrades without a `spawn` directive
+     * (spawn_type < 0) contribute nothing. */
     for (int p = 0; p < 2; p++) {
-        for (int n = count_spawns((PlayerID)p, CREEP_RETRIEVER); n > 0; n--)
-            spawn_creep((PlayerID)p, CREEP_RETRIEVER);
-        for (int n = count_spawns((PlayerID)p, CREEP_SIEGE); n > 0; n--)
-            spawn_creep((PlayerID)p, CREEP_SIEGE);
+        for (int i = 0; i < s.players[p].creep_upgrade_count; i++) {
+            const CreepUpgrade       *u   = &s.players[p].creep_upgrades[i];
+            const CreepUpgradeConfig *cfg = cu_spec(i);
+            if (!u->completed) continue;
+            if (cfg->spawn_type < 0 || cfg->spawn_count <= 0) continue;
+            for (int n = cfg->spawn_count; n > 0; n--)
+                spawn_creep((PlayerID)p, cfg->spawn_type);
+        }
     }
 }
 
@@ -462,11 +466,14 @@ static void sim_one_tick(void) {
         }
     }
 
-    /* Pick up flags */
+    /* Pick up flags. Only creeps whose type has can_carry_flag set can
+     * scoop up an enemy flag — both behaviors are independent, so a creep
+     * with can_carry_flag=1 AND melee_damage>0 (e.g. BANANA) participates
+     * here AND in the tower-damage loop below. */
     for (int i = 0; i < s.thing_count; i++) {
         Thing *t = &s.things[i];
         if (t->tag != THING_CREEP || !t->alive) continue;
-        if (t->creep.type != CREEP_RETRIEVER) continue;
+        if (!ct_spec(t->creep.type)->can_carry_flag) continue;
         if (t->creep.has_flag) continue;
         for (int fi = 0; fi < 2; fi++) {
             Flag *f = &s.flags[fi];
@@ -531,20 +538,22 @@ static void sim_one_tick(void) {
         }
     }
 
-    /* Siege creep melee */
+    /* Creep melee: any creep type with melee_damage > 0 deals that damage
+     * to the first adjacent enemy tower it finds, once per tick. */
     static const int DX[4] = { 1, -1, 0,  0 };
     static const int DY[4] = { 0,  0, 1, -1 };
     for (int i = 0; i < s.thing_count; i++) {
         Thing *c = &s.things[i];
         if (c->tag != THING_CREEP || !c->alive) continue;
-        if (c->creep.type != CREEP_SIEGE) continue;
+        int dmg = ct_spec(c->creep.type)->melee_damage;
+        if (dmg <= 0) continue;
         for (int d = 0; d < 4; d++) {
             int nx = c->x + DX[d], ny = c->y + DY[d];
             int tid = tower_at(nx, ny);
             if (tid < 0) continue;
             Thing *target = &s.things[tid];
             if (target->owner == c->owner) continue;
-            target->hp -= 5;
+            target->hp -= dmg;
             break;
         }
     }

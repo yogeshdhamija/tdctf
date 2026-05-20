@@ -304,7 +304,7 @@ static void test_completed_upgrade_spawns_retriever(void) {
     game_init_with_configs(TEST_TOWERS_CFG, TEST_CREEP_UPGRADES_CFG);
     /* No upgrades complete → turn 1 sim has no creeps. */
     enter_sim();
-    CHECK(find_creep(PLAYER_RED, CREEP_RETRIEVER) == NULL);
+    CHECK(find_creep(PLAYER_RED, game_creep_type_id("RETRIEVER")) == NULL);
     run_sim_to_completion();
 
     /* Turn 2: buy +1 retriever, run sim. Upgrade research is 1 turn so
@@ -312,13 +312,13 @@ static void test_completed_upgrade_spawns_retriever(void) {
     game_buy_creep_upgrade(0);
     enter_sim();
     /* sim turn 2: upgrade not yet completed, no creeps spawn. */
-    CHECK(count_creeps(PLAYER_RED, CREEP_RETRIEVER) == 0);
+    CHECK(count_creeps(PLAYER_RED, game_creep_type_id("RETRIEVER")) == 0);
     run_sim_to_completion();
 
     /* Turn 3: upgrade is complete → 1 retriever spawns at start_simulation. */
     enter_sim();
-    CHECK(count_creeps(PLAYER_RED, CREEP_RETRIEVER) == 1);
-    const Thing *r = find_creep(PLAYER_RED, CREEP_RETRIEVER);
+    CHECK(count_creeps(PLAYER_RED, game_creep_type_id("RETRIEVER")) == 1);
+    const Thing *r = find_creep(PLAYER_RED, game_creep_type_id("RETRIEVER"));
     CHECK(r != NULL);
     if (r) {
         CHECK(r->x == 10 && r->y == 9); /* RED spawn cell */
@@ -390,7 +390,7 @@ static void test_gunner_damages_creep(void) {
      * the gunner's range-3 envelope. ~32 ticks covers the worst case. */
     enter_sim();
     step_ticks(32);
-    const Thing *r = find_creep(PLAYER_BLUE, CREEP_RETRIEVER);
+    const Thing *r = find_creep(PLAYER_BLUE, game_creep_type_id("RETRIEVER"));
     /* The creep either has been damaged or has already died. */
     if (r) {
         CHECK(r->hp < r->max_hp);
@@ -439,7 +439,7 @@ static void test_slammer_slows_creep(void) {
     int saw_hp_drop = 0;
     for (int i = 0; i < 32; i++) {
         step_ticks(1);
-        const Thing *r = find_creep(PLAYER_BLUE, CREEP_RETRIEVER);
+        const Thing *r = find_creep(PLAYER_BLUE, game_creep_type_id("RETRIEVER"));
         if (!r) break;
         if (r->creep.slow_ticks > 0) saw_slow = 1;
         if (r->hp < r->max_hp)       saw_hp_drop = 1;
@@ -471,7 +471,7 @@ static void test_siege_attacks_tower(void) {
     /* Turn 2: 2 BLUE siege creeps spawn at (25,15). They walk left and
      * eventually adjacent siege creeps will hit the blocker. */
     enter_sim();
-    CHECK(count_creeps(PLAYER_BLUE, CREEP_SIEGE) == 2);
+    CHECK(count_creeps(PLAYER_BLUE, game_creep_type_id("SIEGE")) == 2);
 
     /* Step enough ticks for the siege creeps to approach. ~20 ticks of
      * travel + a few melee hits before the blocker dies. */
@@ -504,7 +504,7 @@ static void test_flag_pickup(void) {
      * (4,15): 25 steps west to (4,10), then 5 south. */
     for (int i = 0; i < 35; i++) {
         step_ticks(1);
-        const Thing *r = find_creep(PLAYER_BLUE, CREEP_RETRIEVER);
+        const Thing *r = find_creep(PLAYER_BLUE, game_creep_type_id("RETRIEVER"));
         if (!r) break;
         if (r->creep.has_flag) {
             picked = 1;
@@ -580,7 +580,57 @@ static void test_flag_drop_on_death(void) {
     CHECK(observed_drop);
 }
 
-/* ── 17. Placement validity ──────────────────────────────────────────── */
+/* ── 17. Combined-behavior creep type: BANANA carries AND attacks ─────── */
+
+/* Drives the "creep behaviors are independent config flags" property end
+ * to end. A BANANA creep type sets BOTH can_carry_flag=1 AND
+ * melee_damage>0, then we observe a single BANANA creep:
+ *   - dealing damage to an adjacent enemy tower (melee_damage path), and
+ *   - picking up the enemy flag on contact (can_carry_flag path).
+ * Pinned numbers (BANANA hp 30, melee_damage 3, plus GUNNER 2-shot kill in
+ * TEST_TOWERS_CFG) live in test_fixtures.h. */
+static void test_banana_creep_carries_and_attacks(void) {
+    g_test = "banana_creep_carries_and_attacks";
+    /* TEST_CREEP_BANANA_CFG declares a single upgrade (slot 0) that spawns
+     * 1 BANANA per turn after 1 turn of research. */
+    game_init_with_configs(TEST_TOWERS_CFG, TEST_CREEP_BANANA_CFG);
+    const GameState *s = game_get_state();
+
+    /* RED places a BLOCKER at (4,11). BLUE's spawn is (19,11) and RED's
+     * flag is at (4,15). BLUE's BANANA walks west along y=11, reaches
+     * (5,11) adjacent to the blocker — melee_damage lands — then detours
+     * south to (5,15)→(4,15) and picks up the flag. */
+    game_set_placement(game_tower_id("BLOCKER"));
+    game_grid_click(4, 11);
+    int bid = tower_id_at(4, 11);
+    CHECK(bid >= 0);
+    int hp_before = s->things[bid].hp;
+
+    game_lock_in();                /* → PLAN_BLUE */
+    game_buy_creep_upgrade(0);     /* BLUE: BANANA upgrade, research_turns=1 */
+    game_lock_in();                /* → SIMULATE turn 1 (no creeps yet) */
+    run_sim_to_completion();
+    enter_sim();                   /* SIMULATE turn 2 — BANANA spawns */
+
+    int banana_type = game_creep_type_id("BANANA");
+    CHECK(count_creeps(PLAYER_BLUE, banana_type) == 1);
+
+    int saw_damage = 0;
+    int saw_pickup = 0;
+    /* 14 steps west + 4 south + 1 west = ~19 ticks. Run a bit beyond to
+     * tolerate variability in BFS tiebreaks. */
+    for (int i = 0; i < 30; i++) {
+        step_ticks(1);
+        if (s->things[bid].hp < hp_before) saw_damage = 1;
+        const Thing *banana = find_creep(PLAYER_BLUE, banana_type);
+        if (banana && banana->creep.has_flag) saw_pickup = 1;
+        if (saw_damage && saw_pickup) break;
+    }
+    CHECK(saw_damage);
+    CHECK(saw_pickup);
+}
+
+/* ── 18. Placement validity ──────────────────────────────────────────── */
 
 /* placement_valid rejects the obvious illegal cells (receptacle, at-home
  * flag) via explicit guards, and consults paths_valid for everything else.
@@ -629,6 +679,7 @@ int main(void) {
     test_flag_pickup();
     test_win_condition();
     test_flag_drop_on_death();
+    test_banana_creep_carries_and_attacks();
     test_placement_validity();
     printf("%d assertions, %d failures\n", g_assertions, g_fail);
     return g_fail ? 1 : 0;

@@ -87,8 +87,10 @@ static const char TEST_TOWERS_CFG[] =
     "  build_turns 1\n"
     "  income 20\n";
 
-/* Creep-upgrade fixture for behavior tests. Mirrors the slot-by-slot
- * shape that test_game.c and test_render.c hard-code:
+/* Creep-type + creep-upgrade fixture for behavior tests. Mirrors the
+ * slot-by-slot shape that test_game.c and test_render.c hard-code:
+ *   creep type RETRIEVER: code R, hp 20, can_carry_flag
+ *   creep type SIEGE:     code S, hp 40, melee_damage 5
  *   slot 0: +1 retriever, 1-turn research
  *   slot 1: +2 siege,      1-turn research
  *   slot 2: +2 retrievers, 2-turn research, cost 60 (creep_upgrade_purchase_and_research)
@@ -96,28 +98,55 @@ static const char TEST_TOWERS_CFG[] =
  * Slot order is what test_game.c references by index, so changes here must
  * keep those four slots aligned. */
 static const char TEST_CREEP_UPGRADES_CFG[] =
+    "creep RETRIEVER\n"
+    "  code            R\n"
+    "  hp              20\n"
+    "  can_carry_flag  1\n"
+
+    "creep SIEGE\n"
+    "  code            S\n"
+    "  hp              40\n"
+    "  melee_damage    5\n"
+
     "upgrade RETRIEVER_1\n"
     "  cost            30\n"
     "  research_turns  1\n"
-    "  add_retrievers  1\n"
+    "  spawn           RETRIEVER 1\n"
     "  description     +1 Retriever\n"
 
     "upgrade SIEGE_2\n"
     "  cost            40\n"
     "  research_turns  1\n"
-    "  add_siege       2\n"
+    "  spawn           SIEGE 2\n"
     "  description     +2 Siege\n"
 
     "upgrade RETRIEVER_2X\n"
     "  cost            60\n"
     "  research_turns  2\n"
-    "  add_retrievers  2\n"
+    "  spawn           RETRIEVER 2\n"
     "  description     +2 Retrievers\n"
 
     "upgrade SIEGE_2_II\n"
     "  cost            70\n"
     "  research_turns  2\n"
-    "  add_siege       2\n"
+    "  spawn           SIEGE 2\n"
     "  description     +2 Siege II\n";
+
+/* BANANA fixture for test_banana_creep_carries_and_attacks. A single
+ * upgrade spawns 1 creep that both carries the flag (can_carry_flag=1)
+ * AND damages adjacent enemy towers (melee_damage > 0). Slot 0 is the
+ * only buyable upgrade. */
+static const char TEST_CREEP_BANANA_CFG[] =
+    "creep BANANA\n"
+    "  code            N\n"
+    "  hp              30\n"
+    "  can_carry_flag  1\n"
+    "  melee_damage    3\n"
+
+    "upgrade BANANA_UPG\n"
+    "  cost            50\n"
+    "  research_turns  1\n"
+    "  spawn           BANANA 1\n"
+    "  description     +1 Banana\n";
 
 #endif

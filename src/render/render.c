@@ -1,4 +1,5 @@
 #include "render.h"
+#include "../game/creep_config.h"   /* CREEP_TYPE_MAX_COUNT for crowding-badge sizing */
 #include "../platform/platform.h"
 #include <stdio.h>
 #include <string.h>
@@ -130,18 +131,22 @@ void render_frame(const GameState *gs) {
         plat_draw_line(x1, y1, x2, y2, 0xFFEE88);
     }
 
-    /* Creeps */
-    static int creep_cnt[MAX_GRID_W][MAX_GRID_H][2][CREEP_TYPE_COUNT];
+    /* Creeps. Visual differentiation: any creep type with melee_damage > 0
+     * is rendered "heavy" (larger circle, dim color) — a generic stand-in
+     * for "fighter" creeps; everything else renders "light". This keeps
+     * arbitrary new creep types from the config readable without per-type
+     * art. */
+    static int creep_cnt[MAX_GRID_W][MAX_GRID_H][2][CREEP_TYPE_MAX_COUNT];
     memset(creep_cnt, 0, sizeof(creep_cnt));
     for (int i = 0; i < gs->thing_count; i++) {
         const Thing *t = &gs->things[i];
         if (t->tag != THING_CREEP || !t->alive) continue;
         creep_cnt[t->x][t->y][t->owner][t->creep.type]++;
-        uint32_t col = (t->creep.type == CREEP_SIEGE)
-                       ? player_color_dim(t->owner) : player_color(t->owner);
+        int heavy = game_creep_type_melee_damage(t->creep.type) > 0;
+        uint32_t col = heavy ? player_color_dim(t->owner) : player_color(t->owner);
         int cx = t->x * CELL_SIZE + CELL_SIZE/2;
         int cy = t->y * CELL_SIZE + CELL_SIZE/2;
-        int r  = (t->creep.type == CREEP_SIEGE) ? 7 : 5;
+        int r  = heavy ? 7 : 5;
         plat_fill_circle(cx, cy, r, col);
         if (t->creep.slow_ticks > 0)
             plat_draw_circle(cx, cy, r + 2, 0x88CCFF);
@@ -155,22 +160,31 @@ void render_frame(const GameState *gs) {
 
     /* Per-cell crowding badge: when more than one creep shares a cell the
      * individual circles fully overlap and the player can't see the count
-     * or the type mix. Draw a compact per-owner label like "2R", "3S", or
-     * "2R1S" anchored to the top of the cell in the owner's color, with a
-     * dark backdrop so it stays readable over the creep circle. */
+     * or the type mix. Draw a compact per-owner label like "2R", "2R1S",
+     * or "3B" using each creep type's `code` glyph from the catalog. */
+    int type_count = game_creep_type_count();
     for (int x = 0; x < gs->grid_w; x++) {
         for (int y = 0; y < gs->grid_h; y++) {
-            int total = creep_cnt[x][y][0][CREEP_RETRIEVER] + creep_cnt[x][y][0][CREEP_SIEGE]
-                      + creep_cnt[x][y][1][CREEP_RETRIEVER] + creep_cnt[x][y][1][CREEP_SIEGE];
+            int total = 0;
+            for (int p = 0; p < 2; p++)
+                for (int ct = 0; ct < type_count; ct++)
+                    total += creep_cnt[x][y][p][ct];
             if (total < 2) continue;
             int by = y * CELL_SIZE + 1;
             for (int p = 0; p < 2; p++) {
-                int rc = creep_cnt[x][y][p][CREEP_RETRIEVER];
-                int sc = creep_cnt[x][y][p][CREEP_SIEGE];
-                if (rc + sc == 0) continue;
-                if      (rc > 0 && sc > 0) snprintf(buf, sizeof(buf), "%dR%dS", rc, sc);
-                else if (rc > 0)           snprintf(buf, sizeof(buf), "%dR", rc);
-                else                       snprintf(buf, sizeof(buf), "%dS", sc);
+                int per_player = 0;
+                for (int ct = 0; ct < type_count; ct++) per_player += creep_cnt[x][y][p][ct];
+                if (per_player == 0) continue;
+                buf[0] = 0;
+                size_t used = 0;
+                for (int ct = 0; ct < type_count; ct++) {
+                    int n = creep_cnt[x][y][p][ct];
+                    if (n == 0) continue;
+                    int w = snprintf(buf + used, sizeof(buf) - used,
+                                     "%d%c", n, game_creep_type_code(ct));
+                    if (w < 0 || (size_t)w >= sizeof(buf) - used) break;
+                    used += w;
+                }
                 int label_w = (int)strlen(buf) * 8 + 2;
                 plat_fill_rect(x * CELL_SIZE + 1, by, label_w, 12, 0x000000);
                 plat_draw_text(x * CELL_SIZE + 2, by, buf, player_color((PlayerID)p));
