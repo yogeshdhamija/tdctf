@@ -7,7 +7,7 @@
 | Rendering | HTML5 `<canvas>` 2D context, called from C via Emscripten's SDL2 or raw JS interop |
 | Input | Mouse clicks on canvas — grid cell selection and UI button regions |
 | UI | Rendered entirely on canvas — text and rectangles in a sidebar region to the right of the grid |
-| Build | Single `Makefile` — `emcc` to produce `.wasm` + `.js` glue + `index.html` shell |
+| Build | Single `Makefile` — `emcc` to produce `.wasm` + `.js` glue + `index.html` shell. A pre-step converts `data/towers.cfg` into a C string literal header (`build/tower_config_data.h`) embedded into the binary. |
 
 **No external game libraries.** SDL2 only if needed for canvas abstraction; otherwise raw `emscripten.h` calls to a thin JS rendering layer. **No HTML/CSS UI** — everything is drawn on the canvas.
 
@@ -58,6 +58,7 @@ The C code is organized into three layers with strict dependency direction: **Pl
 | `game.c/h` | Game state struct, init, phase transitions, turn loop, resources, flags, creep upgrades |
 | `thing.c/h` | Tagged-union Thing type, creation, tower/creep logic, combat, spawning, movement |
 | `grid.c/h` | Grid representation, zones, BFS pathfinding |
+| `tower_config.c/h` | Parses the embedded `data/towers.cfg` text into a `TowerCatalog`. All tower stats (cost, HP, build turns, per-level dmg/range/aoe/slow/cooldown/income, upgrade cost/build/HP-bonus) are read from here — no tower numbers are hardcoded in `game.c`. |
 
 **Render layer** — includes game headers to read state. Calls abstract drawing primitives declared in `platform.h`. No platform-specific code.
 

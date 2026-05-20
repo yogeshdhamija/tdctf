@@ -1,53 +1,20 @@
 #include "game.h"
+#include "tower_config.h"
 #include <string.h>
 #include <stdio.h>
 
 static GameState s;
 
-/* ── Tower data ─────────────────────────────────────────── */
-
-typedef struct {
-    int  cost;
-    int  hp;
-    int  build_turns;
-    char code;
-    const char *name;
-} TowerSpec;
-
-static const TowerSpec TOWERS[TOWER_TYPE_COUNT] = {
-    [TOWER_BLOCKER]   = { 20, 100, 1, 'B', "Blocker"   },
-    [TOWER_GUNNER]   = { 30, 50, 0, 'G', "Gunner"   },
-    [TOWER_SLAMMER]  = { 50, 50, 2, 'S', "Slammer"  },
-    [TOWER_RESOURCE] = { 80, 30, 3, 'R', "Resource" },
-};
-
-typedef struct {
-    int dmg;
-    int range;
-    int aoe_radius;
-    int slow;
-    int cooldown;
-} TowerAttack;
-
-static TowerAttack tower_attack(TowerType t, int level) {
-    TowerAttack a = {0};
-    if (t == TOWER_GUNNER) {
-        a.dmg      = (level == 1) ? 10 : 15;
-        a.range    = (level == 1) ? 3  : 4;
-        a.cooldown = 2;
-    } else if (t == TOWER_SLAMMER) {
-        a.dmg        = (level == 1) ? 5 : 8;
-        a.range      = 3;
-        a.aoe_radius = (level == 1) ? 1 : 2;
-        a.slow       = 2;
-        a.cooldown   = 3;
-    }
-    return a;
+/* Tower stats live in data/towers.cfg, embedded as TOWER_CONFIG_DEFAULT and
+ * parsed into a TowerCatalog at game_init(). All tower lookups go through
+ * the catalog — there is no hardcoded tower data in this file. */
+static const TowerConfig *spec(TowerType t) {
+    return &tower_config_get()->towers[t];
 }
 
-int         game_tower_cost(TowerType t) { return TOWERS[t].cost; }
-const char *game_tower_name(TowerType t) { return TOWERS[t].name; }
-char        game_tower_code(TowerType t) { return TOWERS[t].code; }
+int         game_tower_cost(TowerType t) { return spec(t)->cost; }
+const char *game_tower_name(TowerType t) { return spec(t)->name; }
+char        game_tower_code(TowerType t) { return spec(t)->code; }
 
 PlayerID game_planning_player(void) {
     return (s.phase == PHASE_PLAN_BLUE) ? PLAYER_BLUE : PLAYER_RED;
@@ -218,6 +185,7 @@ static void init_creep_upgrades(Player *p) {
 /* ── Init ───────────────────────────────────────────────── */
 
 void game_init(void) {
+    tower_config_load_default();
     memset(&s, 0, sizeof(s));
     s.grid_w = 30;
     s.grid_h = 20;
@@ -285,9 +253,9 @@ static int placement_valid(int gx, int gy, PlayerID p) {
 
 static void try_place(int gx, int gy, TowerType type) {
     PlayerID p = game_planning_player();
-    int cost = TOWERS[type].cost;
-    if (s.players[p].resources < cost) { set_status("Not enough resources"); return; }
-    if (!placement_valid(gx, gy, p))   { set_status("Invalid placement");    return; }
+    const TowerConfig *cfg = spec(type);
+    if (s.players[p].resources < cfg->cost) { set_status("Not enough resources"); return; }
+    if (!placement_valid(gx, gy, p))        { set_status("Invalid placement");    return; }
     int id = alloc_thing();
     if (id < 0) return;
     Thing *t = &s.things[id];
@@ -295,14 +263,14 @@ static void try_place(int gx, int gy, TowerType type) {
     t->tag    = THING_TOWER;
     t->owner  = p;
     t->x      = gx; t->y = gy;
-    t->hp     = TOWERS[type].hp;
-    t->max_hp = TOWERS[type].hp;
+    t->hp     = cfg->hp;
+    t->max_hp = cfg->hp;
     t->alive  = 1;
     t->tower.type        = type;
     t->tower.level       = 1;
-    t->tower.build_turns = TOWERS[type].build_turns;
+    t->tower.build_turns = cfg->build_turns;
     s.grid[gx][gy].thing_id = id;
-    s.players[p].resources -= cost;
+    s.players[p].resources -= cfg->cost;
     s.placement_intent = -1;
     s.selected_x = gx; s.selected_y = gy;
 }
@@ -335,14 +303,14 @@ void game_upgrade_selected(void) {
     Thing *t = &s.things[id];
     PlayerID p = game_planning_player();
     if (t->owner != p)              { set_status("Not your tower");      return; }
-    if (t->tower.level >= 2)        { set_status("Max level");           return; }
+    if (t->tower.level >= TOWER_MAX_LEVELS) { set_status("Max level");    return; }
     if (t->tower.build_turns > 0)   { set_status("Still building");      return; }
-    int cost = TOWERS[t->tower.type].cost;
-    if (s.players[p].resources < cost) { set_status("Not enough resources"); return; }
-    s.players[p].resources -= cost;
-    t->tower.level = 2;
-    t->tower.build_turns = 1;
-    t->max_hp += 20;
+    const TowerConfig *cfg = spec(t->tower.type);
+    if (s.players[p].resources < cfg->upgrade_cost) { set_status("Not enough resources"); return; }
+    s.players[p].resources -= cfg->upgrade_cost;
+    t->tower.level++;
+    t->tower.build_turns = cfg->upgrade_build;
+    t->max_hp += cfg->upgrade_hp_bonus;
     t->hp = t->max_hp;
 }
 
@@ -479,36 +447,36 @@ static void sim_one_tick(void) {
         if (t->tag != THING_TOWER || !t->alive) continue;
         if (t->beam_ttl > 0) t->beam_ttl--;
         if (t->tower.build_turns > 0) continue;
-        if (t->tower.type == TOWER_RESOURCE) continue;
+        const TowerLevelStats *atk = &spec(t->tower.type)->level[t->tower.level - 1];
+        if (atk->range == 0) continue;
         if (t->tower.cooldown > 0) { t->tower.cooldown--; continue; }
-        TowerAttack atk = tower_attack(t->tower.type, t->tower.level);
         int best = -1, best_dist = 999;
         for (int j = 0; j < s.thing_count; j++) {
             Thing *c = &s.things[j];
             if (c->tag != THING_CREEP || !c->alive) continue;
             if (c->owner == t->owner) continue;
             int d = abs_i(c->x - t->x) + abs_i(c->y - t->y);
-            if (d > atk.range) continue;
+            if (d > atk->range) continue;
             if (d < best_dist) { best_dist = d; best = j; }
         }
         if (best < 0) continue;
         Thing *tgt = &s.things[best];
         t->last_target_x = tgt->x; t->last_target_y = tgt->y;
         t->beam_ttl = 2;
-        t->tower.cooldown = atk.cooldown;
-        if (atk.aoe_radius > 0) {
+        t->tower.cooldown = atk->cooldown;
+        if (atk->aoe > 0) {
             for (int j = 0; j < s.thing_count; j++) {
                 Thing *c = &s.things[j];
                 if (c->tag != THING_CREEP || !c->alive) continue;
                 if (c->owner == t->owner) continue;
-                if (abs_i(c->x - tgt->x) <= atk.aoe_radius &&
-                    abs_i(c->y - tgt->y) <= atk.aoe_radius) {
-                    c->hp -= atk.dmg;
-                    if (atk.slow > 0) c->creep.slow_ticks = atk.slow;
+                if (abs_i(c->x - tgt->x) <= atk->aoe &&
+                    abs_i(c->y - tgt->y) <= atk->aoe) {
+                    c->hp -= atk->dmg;
+                    if (atk->slow > 0) c->creep.slow_ticks = atk->slow;
                 }
             }
         } else {
-            tgt->hp -= atk.dmg;
+            tgt->hp -= atk->dmg;
         }
     }
 
@@ -578,9 +546,8 @@ static void end_simulation(void) {
             Thing *t = &s.things[i];
             if (t->tag != THING_TOWER || !t->alive) continue;
             if ((int)t->owner != p) continue;
-            if (t->tower.type != TOWER_RESOURCE) continue;
             if (t->tower.build_turns > 0) continue;
-            inc += (t->tower.level == 1) ? 10 : 20;
+            inc += spec(t->tower.type)->level[t->tower.level - 1].income;
         }
         s.players[p].income_per_turn = inc;
         s.players[p].resources += inc;
