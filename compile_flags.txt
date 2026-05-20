@@ -1,0 +1,5 @@
+-xc
+-std=gnu11
+-Isrc
+-Ibuild
+-Isrc/platform/emsdk/upstream/emscripten/system/include
