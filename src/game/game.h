@@ -116,7 +116,8 @@ typedef struct {
 } GameState;
 
 /* Lifecycle */
-void             game_init(void);
+void             game_init(void);                           /* loads the embedded data/towers.cfg */
+void             game_init_with_tower_config(const char *cfg); /* test hook: load `cfg` instead */
 void             game_frame(void);                          /* advance one frame (~60Hz) */
 const GameState *game_get_state(void);
 

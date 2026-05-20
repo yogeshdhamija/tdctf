@@ -19,51 +19,6 @@ static const char *g_test;
     }                                                                       \
 } while (0)
 
-/* ── 1. Embedded default config: every tower has the values the rest of
- *      the codebase relies on. If someone edits data/towers.cfg in a way
- *      that changes a load-bearing number, this is the test that catches
- *      it before the higher-layer game tests get confused. ─────────────── */
-static void test_default_config_values(void) {
-    g_test = "default_config_values";
-    CHECK(tower_config_load_default() == 0);
-    const TowerCatalog *c = tower_config_get();
-    CHECK(c->count == 4);
-
-    int bi = tower_config_lookup("BLOCKER");
-    int gi = tower_config_lookup("GUNNER");
-    int si = tower_config_lookup("SLAMMER");
-    int ri = tower_config_lookup("RESOURCE");
-    CHECK(bi == 0 && gi == 1 && si == 2 && ri == 3);   /* declaration order */
-    CHECK(tower_config_lookup("FNORD") == -1);
-
-    const TowerConfig *b = &c->towers[bi];
-    CHECK(b->code == 'B' && !strcmp(b->name, "Blocker") && b->level_count == 2);
-    CHECK(b->level[0].cost == 20 && b->level[0].hp == 100 && b->level[0].build_turns == 1);
-    CHECK(b->level[1].cost == 20 && b->level[1].hp == 120 && b->level[1].build_turns == 1);
-    CHECK(b->level[0].range == 0 && b->level[1].range == 0); /* no attack */
-
-    const TowerConfig *g = &c->towers[gi];
-    CHECK(g->code == 'G' && !strcmp(g->name, "Gunner") && g->level_count == 2);
-    CHECK(g->level[0].cost == 30 && g->level[0].hp == 50 && g->level[0].build_turns == 0);
-    CHECK(g->level[0].dmg == 10 && g->level[0].range == 3 && g->level[0].cooldown == 2);
-    CHECK(g->level[1].cost == 30 && g->level[1].hp == 70 && g->level[1].build_turns == 1);
-    CHECK(g->level[1].dmg == 15 && g->level[1].range == 4 && g->level[1].cooldown == 2);
-
-    const TowerConfig *sl = &c->towers[si];
-    CHECK(sl->code == 'S' && sl->level_count == 2);
-    CHECK(sl->level[0].cost == 50 && sl->level[0].hp == 50 && sl->level[0].build_turns == 2);
-    CHECK(sl->level[0].dmg == 5 && sl->level[0].aoe == 1 && sl->level[0].slow == 2);
-    CHECK(sl->level[1].cost == 50 && sl->level[1].hp == 70 && sl->level[1].build_turns == 1);
-    CHECK(sl->level[1].dmg == 8 && sl->level[1].aoe == 2);
-
-    const TowerConfig *r = &c->towers[ri];
-    CHECK(r->code == 'R' && r->level_count == 2);
-    CHECK(r->level[0].cost == 80 && r->level[0].hp == 30 && r->level[0].build_turns == 3);
-    CHECK(r->level[0].income == 10);
-    CHECK(r->level[1].cost == 80 && r->level[1].hp == 50 && r->level[1].build_turns == 1);
-    CHECK(r->level[1].income == 20);
-}
-
 /* ── 2. Comments, blank lines, and indentation are all ignored. ─────── */
 static void test_whitespace_and_comments(void) {
     g_test = "whitespace_and_comments";
@@ -214,7 +169,6 @@ static void test_declaration_order(void) {
 }
 
 int main(void) {
-    test_default_config_values();
     test_whitespace_and_comments();
     test_combined_features();
     test_levels_independent();

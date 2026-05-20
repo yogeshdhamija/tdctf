@@ -1,4 +1,5 @@
 #include "game/game.h"
+#include "test_fixtures.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -70,7 +71,7 @@ static int tower_id_at(int x, int y) {
 
 static void test_initial_state(void) {
     g_test = "initial_state";
-    game_init();
+    game_init_with_tower_config(TEST_TOWERS_CFG);
     const GameState *s = game_get_state();
     CHECK(s->phase == PHASE_PLAN_RED);
     CHECK(s->turn == 1);
@@ -101,7 +102,7 @@ static void test_initial_state(void) {
 
 static void test_phase_transitions(void) {
     g_test = "phase_transitions";
-    game_init();
+    game_init_with_tower_config(TEST_TOWERS_CFG);
     const GameState *s = game_get_state();
     CHECK(s->phase == PHASE_PLAN_RED);
     CHECK(game_planning_player() == PLAYER_RED);
@@ -128,7 +129,7 @@ static void test_phase_transitions(void) {
 
 static void test_tower_placement_basics(void) {
     g_test = "tower_placement_basics";
-    game_init();
+    game_init_with_tower_config(TEST_TOWERS_CFG);
     const GameState *s = game_get_state();
 
     game_set_placement(game_tower_id("GUNNER"));
@@ -154,7 +155,7 @@ static void test_tower_placement_basics(void) {
 
 static void test_placement_zone_restrictions(void) {
     g_test = "placement_zone_restrictions";
-    game_init();
+    game_init_with_tower_config(TEST_TOWERS_CFG);
     const GameState *s = game_get_state();
 
     /* RED cannot place in BLUE zone (x >= 20). placement_intent stays set on
@@ -185,7 +186,7 @@ static void test_placement_zone_restrictions(void) {
 
 static void test_placement_insufficient_resources(void) {
     g_test = "placement_insufficient_resources";
-    game_init();
+    game_init_with_tower_config(TEST_TOWERS_CFG);
     const GameState *s = game_get_state();
 
     /* Cost 80 R tower can fit once (100→20), the second placement fails. */
@@ -213,7 +214,7 @@ static void test_placement_insufficient_resources(void) {
 
 static void test_tower_upgrade(void) {
     g_test = "tower_upgrade";
-    game_init();
+    game_init_with_tower_config(TEST_TOWERS_CFG);
     const GameState *s = game_get_state();
 
     /* Gunner has build_turns=0 so it's eligible to upgrade immediately. */
@@ -242,7 +243,7 @@ static void test_tower_upgrade(void) {
 
 static void test_tower_upgrade_rejects_enemy(void) {
     g_test = "tower_upgrade_rejects_enemy";
-    game_init();
+    game_init_with_tower_config(TEST_TOWERS_CFG);
     const GameState *s = game_get_state();
 
     /* RED places a gunner. Switch to BLUE planning and try to upgrade it. */
@@ -263,7 +264,7 @@ static void test_tower_upgrade_rejects_enemy(void) {
 
 static void test_tower_destroy(void) {
     g_test = "tower_destroy";
-    game_init();
+    game_init_with_tower_config(TEST_TOWERS_CFG);
     const GameState *s = game_get_state();
 
     game_set_placement(game_tower_id("GUNNER"));
@@ -279,7 +280,7 @@ static void test_tower_destroy(void) {
 
 static void test_tower_destroy_rejects_enemy(void) {
     g_test = "tower_destroy_rejects_enemy";
-    game_init();
+    game_init_with_tower_config(TEST_TOWERS_CFG);
     const GameState *s = game_get_state();
 
     game_set_placement(game_tower_id("GUNNER"));
@@ -297,7 +298,7 @@ static void test_tower_destroy_rejects_enemy(void) {
 
 static void test_creep_upgrade_purchase_and_research(void) {
     g_test = "creep_upgrade_purchase_and_research";
-    game_init();
+    game_init_with_tower_config(TEST_TOWERS_CFG);
     const GameState *s = game_get_state();
 
     int cost = s->players[PLAYER_RED].creep_upgrades[2].cost;          /* +2 Retrievers */
@@ -331,7 +332,7 @@ static void test_creep_upgrade_purchase_and_research(void) {
 
 static void test_completed_upgrade_spawns_retriever(void) {
     g_test = "completed_upgrade_spawns_retriever";
-    game_init();
+    game_init_with_tower_config(TEST_TOWERS_CFG);
     /* No upgrades complete → turn 1 sim has no creeps. */
     enter_sim();
     CHECK(find_creep(PLAYER_RED, CREEP_RETRIEVER) == NULL);
@@ -361,7 +362,7 @@ static void test_completed_upgrade_spawns_retriever(void) {
 
 static void test_resource_tower_income(void) {
     g_test = "resource_tower_income";
-    game_init();
+    game_init_with_tower_config(TEST_TOWERS_CFG);
     const GameState *s = game_get_state();
     /* game_tower_id("RESOURCE"): build_turns=3, +10/turn when built. */
     game_set_placement(game_tower_id("RESOURCE"));
@@ -400,7 +401,7 @@ static void test_resource_tower_income(void) {
 
 static void test_gunner_damages_creep(void) {
     g_test = "gunner_damages_creep";
-    game_init();
+    game_init_with_tower_config(TEST_TOWERS_CFG);
     const GameState *s = game_get_state();
 
     /* RED places gunner at (4,14): RED zone, off BLUE's y=15 path, range 3
@@ -439,7 +440,7 @@ static void test_gunner_damages_creep(void) {
 
 static void test_slammer_slows_creep(void) {
     g_test = "slammer_slows_creep";
-    game_init();
+    game_init_with_tower_config(TEST_TOWERS_CFG);
     const GameState *s = game_get_state();
 
     /* Slammer has build_turns=2 so we burn 2 turns before its effect lands.
@@ -482,7 +483,7 @@ static void test_slammer_slows_creep(void) {
 
 static void test_siege_attacks_tower(void) {
     g_test = "siege_attacks_tower";
-    game_init();
+    game_init_with_tower_config(TEST_TOWERS_CFG);
     const GameState *s = game_get_state();
 
     /* RED places BLOCKER at (5,15) — on BLUE's path, RED zone. BLUE siege
@@ -518,7 +519,7 @@ static void test_siege_attacks_tower(void) {
 
 static void test_flag_pickup(void) {
     g_test = "flag_pickup";
-    game_init();
+    game_init_with_tower_config(TEST_TOWERS_CFG);
     const GameState *s = game_get_state();
 
     /* BLUE buys +1 retriever; turn 1 quiet; turn 2 retriever walks to RED
@@ -551,7 +552,7 @@ static void test_flag_pickup(void) {
 
 static void test_win_condition(void) {
     g_test = "win_condition";
-    game_init();
+    game_init_with_tower_config(TEST_TOWERS_CFG);
     const GameState *s = game_get_state();
 
     game_lock_in();              /* → PLAN_BLUE */
@@ -574,7 +575,7 @@ static void test_win_condition(void) {
 
 static void test_flag_drop_on_death(void) {
     g_test = "flag_drop_on_death";
-    game_init();
+    game_init_with_tower_config(TEST_TOWERS_CFG);
     const GameState *s = game_get_state();
 
     /* RED places one gunner at (5,15) — the first cell of BLUE's return
@@ -619,7 +620,7 @@ static void test_flag_drop_on_death(void) {
  * succeed when an alternate BFS route exists. */
 static void test_placement_validity(void) {
     g_test = "placement_validity";
-    game_init();
+    game_init_with_tower_config(TEST_TOWERS_CFG);
     const GameState *s = game_get_state();
 
     /* Receptacle cell rejected. */

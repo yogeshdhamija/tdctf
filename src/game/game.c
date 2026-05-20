@@ -198,8 +198,10 @@ static void init_creep_upgrades(Player *p) {
 
 /* ── Init ───────────────────────────────────────────────── */
 
-void game_init(void) {
-    tower_config_load_default();
+/* Reset all non-catalog state. Split out so callers can pin the catalog
+ * first (via tower_config_load_*) and then call this to reset everything
+ * else without re-loading the default config. */
+static void game_init_state(void) {
     memset(&s, 0, sizeof(s));
     s.grid_w = 30;
     s.grid_h = 20;
@@ -239,6 +241,16 @@ void game_init(void) {
     s.flags[PLAYER_BLUE].owner      = PLAYER_BLUE;
     s.flags[PLAYER_BLUE].carried_by = -1;
     s.flags[PLAYER_BLUE].at_home    = 1;
+}
+
+void game_init(void) {
+    tower_config_load_default();
+    game_init_state();
+}
+
+void game_init_with_tower_config(const char *cfg) {
+    tower_config_load_from_string(cfg);
+    game_init_state();
 }
 
 /* ── Planning actions ───────────────────────────────────── */

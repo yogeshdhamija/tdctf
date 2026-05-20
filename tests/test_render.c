@@ -2,6 +2,7 @@
 #include "game/game.h"
 #include "game/tower_config.h"
 #include "platform/platform.h"
+#include "test_fixtures.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -43,11 +44,6 @@ void plat_draw_text(int x, int y, const char *t, uint32_t c) {
     size_t n = strlen(t);
     if (n >= sizeof(tc->text)) n = sizeof(tc->text) - 1;
     memcpy(tc->text, t, n); tc->text[n] = 0;
-}
-static const TextCall *find_text(const char *needle) {
-    for (int i = 0; i < g_text_call_count; i++)
-        if (strstr(g_text_calls[i].text, needle)) return &g_text_calls[i];
-    return NULL;
 }
 void plat_draw_triangle(int a, int b, int c2, int d, int e, int f, uint32_t g) {
     (void)a;(void)b;(void)c2;(void)d;(void)e;(void)f;(void)g;
@@ -95,7 +91,7 @@ static int present(int id) { return g_present[id]; }
  * grid clicks must always fall through to game_grid_click, not a button. */
 static void test_no_buttons_in_grid_area(void) {
     g_test = "no_buttons_in_grid_area";
-    game_init();
+    game_init_with_tower_config(TEST_TOWERS_CFG);
     render_frame(game_get_state());
 
     int gw = 30 * CELL_SIZE, gh = 20 * CELL_SIZE;
@@ -111,7 +107,7 @@ static void test_no_buttons_in_grid_area(void) {
  * BUY_UPGRADE_* buttons. */
 static void test_planning_buttons_visible(void) {
     g_test = "planning_buttons_visible";
-    game_init();
+    game_init_with_tower_config(TEST_TOWERS_CFG);
     render_frame(game_get_state());
     scan_buttons();
     CHECK(present(BTN_LOCK_IN));
@@ -134,7 +130,7 @@ static void test_planning_buttons_visible(void) {
  * table. */
 static void test_buy_upgrade_button_disappears_after_purchase(void) {
     g_test = "buy_upgrade_button_disappears_after_purchase";
-    game_init();
+    game_init_with_tower_config(TEST_TOWERS_CFG);
     render_frame(game_get_state());
     scan_buttons();
     CHECK(present(BTN_BUY_UPGRADE_0));
@@ -151,7 +147,7 @@ static void test_buy_upgrade_button_disappears_after_purchase(void) {
  * buttons. */
 static void test_own_tower_selected_shows_upgrade_destroy(void) {
     g_test = "own_tower_selected_shows_upgrade_destroy";
-    game_init();
+    game_init_with_tower_config(TEST_TOWERS_CFG);
     /* Place a RED gunner — placement also sets selected_x/y to the new tower. */
     game_set_placement(game_tower_id("GUNNER"));
     game_grid_click(6, 4);
@@ -166,7 +162,7 @@ static void test_own_tower_selected_shows_upgrade_destroy(void) {
  * not drawn for a selected tower they don't own. */
 static void test_enemy_tower_selected_no_upgrade_destroy(void) {
     g_test = "enemy_tower_selected_no_upgrade_destroy";
-    game_init();
+    game_init_with_tower_config(TEST_TOWERS_CFG);
     game_set_placement(game_tower_id("GUNNER"));
     game_grid_click(6, 4);
     /* Hand off to BLUE planning and re-select RED's tower. */
@@ -182,7 +178,7 @@ static void test_enemy_tower_selected_no_upgrade_destroy(void) {
 /* During SIMULATE the sidebar shows tick text but no clickable elements. */
 static void test_simulation_phase_no_buttons(void) {
     g_test = "simulation_phase_no_buttons";
-    game_init();
+    game_init_with_tower_config(TEST_TOWERS_CFG);
     game_lock_in(); /* → PLAN_BLUE */
     game_lock_in(); /* → SIMULATE  */
 
@@ -204,7 +200,7 @@ static void test_simulation_phase_no_buttons(void) {
  * spawn cell (29,10), stacked. */
 static void test_stacked_creep_count_badge(void) {
     g_test = "stacked_creep_count_badge";
-    game_init();
+    game_init_with_tower_config(TEST_TOWERS_CFG);
     game_lock_in();                 /* → PLAN_BLUE */
     game_buy_creep_upgrade(2);      /* +2 retrievers, 2 turn research */
     game_lock_in();                 /* → SIMULATE turn 1 (no creeps yet) */
@@ -255,7 +251,7 @@ static void test_stacked_creep_count_badge(void) {
  * but that's outside the grid area.) */
 static void test_single_creep_no_badge(void) {
     g_test = "single_creep_no_badge";
-    game_init();
+    game_init_with_tower_config(TEST_TOWERS_CFG);
     game_lock_in();                 /* → PLAN_BLUE */
     game_buy_creep_upgrade(0);      /* +1 retriever */
     game_lock_in();                 /* → SIMULATE turn 1 (no creeps yet) */
@@ -279,7 +275,7 @@ static void test_single_creep_no_badge(void) {
 /* When the game ends, only the Restart button is hittable. */
 static void test_game_over_shows_restart(void) {
     g_test = "game_over_shows_restart";
-    game_init();
+    game_init_with_tower_config(TEST_TOWERS_CFG);
     /* Reach GAME_OVER via the same scenario as test_game.c's win test:
      * BLUE buys a retriever, then runs through one quiet sim turn so the
      * upgrade completes, then plays out turn 2 until the carrier returns
