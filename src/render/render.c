@@ -279,8 +279,9 @@ void render_frame(const GameState *gs) {
                 plat_fill_rect(sx + 10, line, SIDEBAR_W - 20, 20, 0x252535);
                 plat_draw_text(sx + 14, line + 3, buf, 0xAAAACC);
             } else {
-                int cost = game_creep_upgrade_cost(i);
-                snprintf(buf, sizeof(buf), "%s $%d", desc, cost);
+                int cost  = game_creep_upgrade_cost(i);
+                int turns = game_creep_upgrade_research_turns(i);
+                snprintf(buf, sizeof(buf), "%s $%d %dt", desc, cost, turns);
                 int enabled = gs->players[p].resources >= cost;
                 draw_button(BTN_BUY_UPGRADE_BASE + i, sx + 10, line,
                             SIDEBAR_W - 20, 20, buf, 0, enabled);

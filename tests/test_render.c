@@ -126,6 +126,27 @@ static void test_planning_buttons_visible(void) {
     CHECK(!present(BTN_RESTART));
 }
 
+/* The unpurchased buy-upgrade button text mirrors the place-tower button
+ * format: it ends with "$cost <turns>t" so the player can see the research
+ * cost in the same shape as a tower's build cost without selecting it.
+ * Slot 0: "+1 Retriever" $30 / 1 turn. Slot 2: "+2 Retrievers" $60 / 2 turns. */
+static void test_buy_upgrade_button_shows_turn_count(void) {
+    g_test = "buy_upgrade_button_shows_turn_count";
+    game_init_with_configs(TEST_TOWERS_CFG, TEST_CREEP_UPGRADES_CFG);
+    reset_text_log();
+    render_frame(game_get_state());
+    int found_slot0 = 0, found_slot2 = 0;
+    for (int i = 0; i < g_text_call_count; i++) {
+        const char *t = g_text_calls[i].text;
+        if (strstr(t, "+1 Retriever")  && strstr(t, "$30") && strstr(t, "1t"))
+            found_slot0 = 1;
+        if (strstr(t, "+2 Retrievers") && strstr(t, "$60") && strstr(t, "2t"))
+            found_slot2 = 1;
+    }
+    CHECK(found_slot0);
+    CHECK(found_slot2);
+}
+
 /* Purchasing an upgrade flips it from a clickable button to a status tile
  * — the BTN_BUY_UPGRADE_N entry should no longer be present in the hit
  * table. */
@@ -309,6 +330,7 @@ static void test_game_over_shows_restart(void) {
 int main(void) {
     test_no_buttons_in_grid_area();
     test_planning_buttons_visible();
+    test_buy_upgrade_button_shows_turn_count();
     test_buy_upgrade_button_disappears_after_purchase();
     test_own_tower_selected_shows_upgrade_destroy();
     test_enemy_tower_selected_no_upgrade_destroy();
