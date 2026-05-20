@@ -222,7 +222,7 @@ static void test_simulation_phase_no_buttons(void) {
  * spawn cell (29,10), stacked. */
 static void test_stacked_creep_count_badge(void) {
     g_test = "stacked_creep_count_badge";
-    game_init_with_configs(TEST_TOWERS_CFG, TEST_CREEP_UPGRADES_CFG);
+    game_init_with_configs_and_map(TEST_TOWERS_CFG, TEST_CREEP_UPGRADES_CFG, TEST_MAP_CFG);
     game_lock_in();                 /* → PLAN_BLUE */
     game_buy_creep_upgrade(2);      /* +2 retrievers, 2 turn research */
     game_lock_in();                 /* → SIMULATE turn 1 (no creeps yet) */

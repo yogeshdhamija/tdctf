@@ -123,6 +123,7 @@ void             game_init(void);                           /* loads embedded da
 void             game_init_with_tower_config(const char *cfg); /* test hook: load `cfg` instead of the default towers; creep upgrades use the default */
 void             game_init_with_creep_config(const char *cfg); /* test hook: load `cfg` instead of the default creep upgrades; towers use the default */
 void             game_init_with_configs(const char *tower_cfg, const char *creep_cfg); /* test hook: pin both catalogs from fixtures */
+void             game_init_with_configs_and_map(const char *tower_cfg, const char *creep_cfg, const char *map_cfg); /* test hook: pin both catalogs AND the map from fixtures */
 void             game_frame(void);                          /* advance one frame (~60Hz) */
 const GameState *game_get_state(void);
 

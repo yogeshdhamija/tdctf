@@ -298,6 +298,13 @@ void game_init_with_configs(const char *tower_cfg, const char *creep_cfg) {
     game_init_state();
 }
 
+void game_init_with_configs_and_map(const char *tower_cfg, const char *creep_cfg, const char *map_cfg) {
+    tower_config_load_from_string(tower_cfg);
+    creep_config_load_from_string(creep_cfg);
+    map_config_load_from_string(map_cfg);
+    game_init_state();
+}
+
 /* ── Planning actions ───────────────────────────────────── */
 
 static int planning(void) {

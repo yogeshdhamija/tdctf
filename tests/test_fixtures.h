@@ -132,6 +132,36 @@ static const char TEST_CREEP_UPGRADES_CFG[] =
     "  spawn           SIEGE 2\n"
     "  description     +2 Siege II\n";
 
+/* Map fixture for behavior tests. Mirrors the 30x20 layout the suite was
+ * originally written against — RED zone at x<10, BLUE at x>=20, neutral
+ * strip in between with no debris. Landmark coords match what
+ * test_game.c / test_render.c reference directly: RED spawn (10,8),
+ * BLUE spawn (19,11), RED receptacle (4,4), BLUE receptacle (25,15),
+ * RED flag (4,15), BLUE flag (25,4). Tests use this instead of
+ * data/map.cfg so the shipped map can be edited freely. */
+static const char TEST_MAP_CFG[] =
+    "grid\n"
+    "RRRRRRRRRR..........BBBBBBBBBB\n"
+    "RRRRRRRRRR..........BBBBBBBBBB\n"
+    "RRRRRRRRRR..........BBBBBBBBBB\n"
+    "RRRRRRRRRR..........BBBBBBBBBB\n"
+    "RRRR[RRRRR..........BBBBBbBBBB\n"
+    "RRRRRRRRRR..........BBBBBBBBBB\n"
+    "RRRRRRRRRR..........BBBBBBBBBB\n"
+    "RRRRRRRRRR..........BBBBBBBBBB\n"
+    "RRRRRRRRRR1.........BBBBBBBBBB\n"
+    "RRRRRRRRRR..........BBBBBBBBBB\n"
+    "RRRRRRRRRR..........BBBBBBBBBB\n"
+    "RRRRRRRRRR.........2BBBBBBBBBB\n"
+    "RRRRRRRRRR..........BBBBBBBBBB\n"
+    "RRRRRRRRRR..........BBBBBBBBBB\n"
+    "RRRRRRRRRR..........BBBBBBBBBB\n"
+    "RRRRrRRRRR..........BBBBB]BBBB\n"
+    "RRRRRRRRRR..........BBBBBBBBBB\n"
+    "RRRRRRRRRR..........BBBBBBBBBB\n"
+    "RRRRRRRRRR..........BBBBBBBBBB\n"
+    "RRRRRRRRRR..........BBBBBBBBBB\n";
+
 /* BANANA fixture for test_banana_creep_carries_and_attacks. A single
  * upgrade spawns 1 creep that both carries the flag (can_carry_flag=1)
  * AND damages adjacent enemy towers (melee_damage > 0). Slot 0 is the
