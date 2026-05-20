@@ -103,8 +103,10 @@ static void test_no_buttons_in_grid_area(void) {
 }
 
 /* In PLAN_RED with no purchases yet, the sidebar shows the Lock In button,
- * a placement button for every tower in the catalog, and all four
- * BUY_UPGRADE_* buttons. */
+ * a placement button for every tower in the catalog, and a BUY_UPGRADE
+ * button for every upgrade in the catalog. Both palettes are iterated
+ * dynamically so adding a new tower or upgrade to the cfg is enough — it
+ * doesn't need a code change to become clickable. */
 static void test_planning_buttons_visible(void) {
     g_test = "planning_buttons_visible";
     game_init_with_configs(TEST_TOWERS_CFG, TEST_CREEP_UPGRADES_CFG);
@@ -114,10 +116,9 @@ static void test_planning_buttons_visible(void) {
     CHECK(game_tower_count() > 0);
     for (int i = 0; i < game_tower_count(); i++)
         CHECK(present(BTN_PLACE_TOWER_BASE + i));
-    CHECK(present(BTN_BUY_UPGRADE_0));
-    CHECK(present(BTN_BUY_UPGRADE_1));
-    CHECK(present(BTN_BUY_UPGRADE_2));
-    CHECK(present(BTN_BUY_UPGRADE_3));
+    CHECK(game_creep_upgrade_count() > 0);
+    for (int i = 0; i < game_creep_upgrade_count(); i++)
+        CHECK(present(BTN_BUY_UPGRADE_BASE + i));
     /* No tower selected yet → no upgrade/destroy buttons. */
     CHECK(!present(BTN_UPGRADE_TOWER));
     CHECK(!present(BTN_DESTROY_TOWER));
@@ -133,14 +134,14 @@ static void test_buy_upgrade_button_disappears_after_purchase(void) {
     game_init_with_configs(TEST_TOWERS_CFG, TEST_CREEP_UPGRADES_CFG);
     render_frame(game_get_state());
     scan_buttons();
-    CHECK(present(BTN_BUY_UPGRADE_0));
+    CHECK(present(BTN_BUY_UPGRADE_BASE + 0));
 
     game_buy_creep_upgrade(0);
     render_frame(game_get_state());
     scan_buttons();
-    CHECK(!present(BTN_BUY_UPGRADE_0));
+    CHECK(!present(BTN_BUY_UPGRADE_BASE + 0));
     /* Siblings still buyable. */
-    CHECK(present(BTN_BUY_UPGRADE_1));
+    CHECK(present(BTN_BUY_UPGRADE_BASE + 1));
 }
 
 /* Selecting one of your own towers exposes the Upgrade and Destroy
@@ -187,7 +188,7 @@ static void test_simulation_phase_no_buttons(void) {
     CHECK(!present(BTN_LOCK_IN));
     for (int i = 0; i < game_tower_count(); i++)
         CHECK(!present(BTN_PLACE_TOWER_BASE + i));
-    CHECK(!present(BTN_BUY_UPGRADE_0));
+    CHECK(!present(BTN_BUY_UPGRADE_BASE + 0));
     CHECK(!present(BTN_UPGRADE_TOWER));
     CHECK(!present(BTN_DESTROY_TOWER));
     CHECK(!present(BTN_RESTART));
@@ -301,7 +302,7 @@ static void test_game_over_shows_restart(void) {
     CHECK(present(BTN_RESTART));
     CHECK(!present(BTN_LOCK_IN));
     CHECK(!present(BTN_PLACE_TOWER_BASE + game_tower_id("GUNNER")));
-    CHECK(!present(BTN_BUY_UPGRADE_0));
+    CHECK(!present(BTN_BUY_UPGRADE_BASE + 0));
     CHECK(!present(BTN_UPGRADE_TOWER));
 }
 

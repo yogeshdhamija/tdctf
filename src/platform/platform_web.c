@@ -121,14 +121,14 @@ void on_click(int px, int py) {
         game_set_placement(btn - BTN_PLACE_TOWER_BASE);
         return;
     }
+    if (btn >= BTN_BUY_UPGRADE_BASE) {
+        game_buy_creep_upgrade(btn - BTN_BUY_UPGRADE_BASE);
+        return;
+    }
     switch (btn) {
         case BTN_LOCK_IN:         game_lock_in();                       break;
         case BTN_UPGRADE_TOWER:   game_upgrade_selected();              break;
         case BTN_DESTROY_TOWER:   game_destroy_selected();              break;
-        case BTN_BUY_UPGRADE_0:   game_buy_creep_upgrade(0);            break;
-        case BTN_BUY_UPGRADE_1:   game_buy_creep_upgrade(1);            break;
-        case BTN_BUY_UPGRADE_2:   game_buy_creep_upgrade(2);            break;
-        case BTN_BUY_UPGRADE_3:   game_buy_creep_upgrade(3);            break;
         case BTN_RESTART:         game_init();                          break;
         default: break;
     }
