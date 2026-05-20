@@ -95,12 +95,6 @@ static void test_initial_state(void) {
     /* Creep upgrades initialised. */
     CHECK(s->players[PLAYER_RED].creep_upgrade_count == 4);
     CHECK(s->players[PLAYER_BLUE].creep_upgrade_count == 4);
-    /* Path was demarcated as a contiguous line starting at the spawn cell
-     * and looping through the enemy flag back to the receptacle. */
-    CHECK(s->path_len[PLAYER_RED] > 1);
-    CHECK(s->path_x[PLAYER_RED][0] == 0 && s->path_y[PLAYER_RED][0] == 9);
-    int last = s->path_len[PLAYER_RED] - 1;
-    CHECK(s->path_x[PLAYER_RED][last] == 4 && s->path_y[PLAYER_RED][last] == 4);
 }
 
 /* ── 2. Phase transitions / turn counter ─────────────────────────────── */

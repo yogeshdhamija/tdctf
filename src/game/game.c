@@ -93,32 +93,22 @@ static void set_status(const char *msg) {
 
 /* ── BFS pathfinding ────────────────────────────────────── */
 
-/* Creep pathing per docs/game-design.md §10. Conceptually the goal "line" for
- * a creep is spawn → enemy_flag → receptacle, with the flag's current cell
- * (when on the ground) inserted between the two halves. Each tick the creep
- * takes the shortest unblocked path to the closest cell on that line it hasn't
- * yet visited. Same rule for every creep type and whether or not the creep
- * carries the flag — flag pickup is a separate side-effect of arriving on the
- * flag's cell, not a pathing branch.
- *
- * Implementation: callers fill bfs_goal[][] with the set of acceptable target
- * cells, then bfs_step_in finds the shortest path from (sx,sy) to any of
- * them and returns the first step. */
+/* Creep pathing per docs/game-design.md §10. Each creep walks the shortest
+ * unblocked path spawn → enemy flag → own receptacle. Phase 1 (visited_flag
+ * == 0): the goal is the enemy flag's current cell. Phase 2 (visited_flag
+ * == 1, set as soon as the creep steps onto the flag's current cell): the
+ * goal is the creep's own receptacle. The neighbour expansion order in BFS
+ * is horizontal-first (+x, -x, +y, -y), so when two cells tie for the
+ * shortest distance to the goal, BFS returns the horizontal one as the
+ * first step. */
 static int     bfs_parent[MAX_GRID_W][MAX_GRID_H];
 static int     bfs_qx[MAX_GRID_W * MAX_GRID_H];
 static int     bfs_qy[MAX_GRID_W * MAX_GRID_H];
-static uint8_t bfs_goal[MAX_GRID_W][MAX_GRID_H];
 
-static void bfs_clear_goals_in(const GameState *gs) {
-    for (int x = 0; x < gs->grid_w; x++)
-        for (int y = 0; y < gs->grid_h; y++)
-            bfs_goal[x][y] = 0;
-}
-
-static int bfs_step_in(const GameState *gs, int sx, int sy,
+static int bfs_to_goal(const GameState *gs, int sx, int sy, int gx, int gy,
                        int *step_x, int *step_y) {
     if (sx < 0 || sy < 0 || sx >= gs->grid_w || sy >= gs->grid_h) return 0;
-    if (bfs_goal[sx][sy]) {
+    if (sx == gx && sy == gy) {
         if (step_x) { *step_x = sx; *step_y = sy; }
         return 1;
     }
@@ -129,6 +119,9 @@ static int bfs_step_in(const GameState *gs, int sx, int sy,
     int qh = 0, qt = 0;
     bfs_qx[qt] = sx; bfs_qy[qt] = sy; qt++;
     bfs_parent[sx][sy] = sy * W + sx + 1;
+    /* Horizontal-first: cells tied for shortest distance from source are
+     * discovered via +x / -x before +y / -y, so the returned first step
+     * prefers horizontal movement on a tie. */
     static const int DX[4] = { 1, -1, 0,  0 };
     static const int DY[4] = { 0,  0, 1, -1 };
     while (qh < qt) {
@@ -137,9 +130,13 @@ static int bfs_step_in(const GameState *gs, int sx, int sy,
             int nx = cx + DX[i], ny = cy + DY[i];
             if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
             if (bfs_parent[nx][ny]) continue;
+            /* The goal cell itself is reachable even if "blocked" — a creep
+             * walking toward a tower-occupied target would otherwise be
+             * stuck. But this only matters at placement time: paths_valid
+             * uses bfs_to_goal with goals that aren't blocked. */
             if (!walkable_in(gs, nx, ny)) continue;
             bfs_parent[nx][ny] = cy * W + cx + 1;
-            if (bfs_goal[nx][ny]) {
+            if (nx == gx && ny == gy) {
                 int rx = nx, ry = ny;
                 while (1) {
                     int p  = bfs_parent[rx][ry] - 1;
@@ -157,50 +154,36 @@ static int bfs_step_in(const GameState *gs, int sx, int sy,
     return 0;
 }
 
-void game_build_path(GameState *gs, PlayerID p) {
-    PlayerID enemy = (p == PLAYER_RED) ? PLAYER_BLUE : PLAYER_RED;
-    int x = gs->spawn_x[p], y = gs->spawn_y[p];
-    int fx = gs->flags[enemy].x, fy = gs->flags[enemy].y;
-    int rx = gs->receptacle_x[p], ry = gs->receptacle_y[p];
-    int n = 0;
-    gs->path_x[p][n] = x; gs->path_y[p][n] = y; n++;
-    while (x != fx && n < MAX_PATH) { x += (fx > x) ? 1 : -1; gs->path_x[p][n] = x; gs->path_y[p][n] = y; n++; }
-    while (y != fy && n < MAX_PATH) { y += (fy > y) ? 1 : -1; gs->path_x[p][n] = x; gs->path_y[p][n] = y; n++; }
-    while (x != rx && n < MAX_PATH) { x += (rx > x) ? 1 : -1; gs->path_x[p][n] = x; gs->path_y[p][n] = y; n++; }
-    while (y != ry && n < MAX_PATH) { y += (ry > y) ? 1 : -1; gs->path_x[p][n] = x; gs->path_y[p][n] = y; n++; }
-    gs->path_len[p] = n;
-}
-
 int game_pathing_next_step(const GameState *gs, int creep_x, int creep_y,
-                           PlayerID owner, int path_progress,
+                           PlayerID owner, int visited_flag,
                            int *out_x, int *out_y) {
-    bfs_clear_goals_in(gs);
-    for (int i = path_progress + 1; i < gs->path_len[owner]; i++)
-        bfs_goal[gs->path_x[owner][i]][gs->path_y[owner][i]] = 1;
+    int gx, gy;
     PlayerID enemy = (owner == PLAYER_RED) ? PLAYER_BLUE : PLAYER_RED;
     const Flag *f = &gs->flags[enemy];
-    if (f->carried_by == -1)
-        bfs_goal[f->x][f->y] = 1;
-    /* The creep's own cell is never a goal — otherwise the BFS short-circuits
-     * with "no movement" when the creep is currently sitting on an unvisited
-     * line cell (e.g. at the flag, before the path_progress has been advanced
-     * past it). */
-    if (in_bounds(creep_x, creep_y)) bfs_goal[creep_x][creep_y] = 0;
-    return bfs_step_in(gs, creep_x, creep_y, out_x, out_y);
+    /* Carried-flag exemption: a non-carrier creep in phase 1 does NOT chase
+     * a teammate carrier. The flag's current cell is a goal only while it's
+     * at home or dropped. If it's being carried, the creep skips ahead and
+     * heads to the receptacle alongside the carrier — but without locking
+     * in visited_flag, so a subsequent carrier death (dropping the flag)
+     * reverts the goal to the new flag location. */
+    if (!visited_flag && f->carried_by == -1) {
+        gx = f->x; gy = f->y;
+    } else {
+        gx = gs->receptacle_x[owner]; gy = gs->receptacle_y[owner];
+    }
+    return bfs_to_goal(gs, creep_x, creep_y, gx, gy, out_x, out_y);
 }
 
-/* Placement is legal only if both halves of every player's loop remain
- * walkable: spawn → enemy flag → own receptacle. Either half being severed
- * would leave creeps unable to complete their objective. */
+/* Placement is legal only if every creep's journey remains possible:
+ * spawn → enemy flag → own receptacle for both players. Either half being
+ * severed would strand creeps. */
 static int paths_valid(void) {
     for (int p = 0; p < 2; p++) {
         PlayerID enemy = (p == PLAYER_RED) ? PLAYER_BLUE : PLAYER_RED;
-        bfs_clear_goals_in(&s);
-        bfs_goal[s.flags[enemy].x][s.flags[enemy].y] = 1;
-        if (!bfs_step_in(&s, s.spawn_x[p], s.spawn_y[p], NULL, NULL)) return 0;
-        bfs_clear_goals_in(&s);
-        bfs_goal[s.receptacle_x[p]][s.receptacle_y[p]] = 1;
-        if (!bfs_step_in(&s, s.flags[enemy].x, s.flags[enemy].y, NULL, NULL)) return 0;
+        if (!bfs_to_goal(&s, s.spawn_x[p], s.spawn_y[p],
+                         s.flags[enemy].x, s.flags[enemy].y, NULL, NULL)) return 0;
+        if (!bfs_to_goal(&s, s.flags[enemy].x, s.flags[enemy].y,
+                         s.receptacle_x[p], s.receptacle_y[p], NULL, NULL)) return 0;
     }
     return 1;
 }
@@ -274,12 +257,6 @@ void game_init(void) {
     s.flags[PLAYER_BLUE].owner      = PLAYER_BLUE;
     s.flags[PLAYER_BLUE].carried_by = -1;
     s.flags[PLAYER_BLUE].at_home    = 1;
-
-    /* Demarcated path: cell-by-cell L-shaped loop spawn → enemy flag →
-     * own receptacle. Visible to both players and serves as the goal set
-     * for creep pathing per docs/game-design.md §10. */
-    game_build_path(&s, PLAYER_RED);
-    game_build_path(&s, PLAYER_BLUE);
 }
 
 /* ── Planning actions ───────────────────────────────────── */
@@ -440,29 +417,23 @@ static void start_simulation(void) {
 }
 
 static void sim_one_tick(void) {
-    /* Move creeps. Unified per docs/game-design.md §10: every creep takes one
-     * step toward the closest unvisited cell on its line (spawn → enemy flag →
-     * receptacle), with the flag's current cell added as a goal when on the
-     * ground. has_flag is not a pathing input — it only affects whether the
-     * flag's position is dragged along after the move. */
+    /* Move creeps. Per docs/game-design.md §10: each creep takes the
+     * shortest unblocked path to the enemy flag's current cell, then once
+     * it touches the flag (visited_flag flips) to its own receptacle.
+     * has_flag is not a pathing input — it only affects whether the flag's
+     * position is dragged along after the move. */
     for (int i = 0; i < s.thing_count; i++) {
         Thing *t = &s.things[i];
         if (t->tag != THING_CREEP || !t->alive) continue;
         if (t->creep.slow_ticks > 0) { t->creep.slow_ticks--; continue; }
         int nx = t->x, ny = t->y;
         if (!game_pathing_next_step(&s, t->x, t->y, t->owner,
-                                    t->creep.path_progress, &nx, &ny)) continue;
+                                    t->creep.visited_flag, &nx, &ny)) continue;
         t->x = nx; t->y = ny;
-        /* path_progress = smallest line index > current progress whose cell
-         * coords match the creep's new cell. Smallest (rather than largest)
-         * makes traversal robust if the line ever revisits a coord — the
-         * progress walks forward one position at a time, not jumping ahead. */
-        PlayerID p = t->owner;
-        for (int k = t->creep.path_progress + 1; k < s.path_len[p]; k++) {
-            if (s.path_x[p][k] == t->x && s.path_y[p][k] == t->y) {
-                t->creep.path_progress = k;
-                break;
-            }
+        PlayerID enemy = (t->owner == PLAYER_RED) ? PLAYER_BLUE : PLAYER_RED;
+        if (!t->creep.visited_flag &&
+            t->x == s.flags[enemy].x && t->y == s.flags[enemy].y) {
+            t->creep.visited_flag = 1;
         }
         if (t->creep.has_flag) {
             for (int k = 0; k < 2; k++)

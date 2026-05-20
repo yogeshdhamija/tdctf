@@ -69,24 +69,35 @@ void render_frame(const GameState *gs) {
     for (int y = 0; y <= gs->grid_h; y++)
         plat_draw_line(0, y * CELL_SIZE, gw, y * CELL_SIZE, 0x303030);
 
-    /* Path overlays */
-    for (int p = 0; p < 2; p++) {
-        uint32_t c = player_color_dim((PlayerID)p);
-        for (int i = 1; i < gs->path_len[p]; i++) {
-            int x1 = gs->path_x[p][i-1] * CELL_SIZE + CELL_SIZE/2;
-            int y1 = gs->path_y[p][i-1] * CELL_SIZE + CELL_SIZE/2;
-            int x2 = gs->path_x[p][i]   * CELL_SIZE + CELL_SIZE/2;
-            int y2 = gs->path_y[p][i]   * CELL_SIZE + CELL_SIZE/2;
-            plat_draw_line(x1, y1, x2, y2, c);
-        }
-    }
-
     /* Receptacles */
     for (int p = 0; p < 2; p++) {
         int rx = gs->receptacle_x[p] * CELL_SIZE;
         int ry = gs->receptacle_y[p] * CELL_SIZE;
         plat_draw_rect(rx + 2, ry + 2, CELL_SIZE - 4, CELL_SIZE - 4, player_color((PlayerID)p));
         plat_draw_rect(rx + 5, ry + 5, CELL_SIZE - 10, CELL_SIZE - 10, player_color((PlayerID)p));
+    }
+
+    /* Spawn-direction arrows: at each spawn cell, an arrow pointing the
+     * first BFS step toward the enemy flag — i.e. where this player's
+     * creeps will head when they appear. Updates live as towers reshape
+     * the shortest path. */
+    for (int p = 0; p < 2; p++) {
+        int sxc = gs->spawn_x[p], syc = gs->spawn_y[p];
+        int nx, ny;
+        if (!game_pathing_next_step(gs, sxc, syc, (PlayerID)p, 0, &nx, &ny)) continue;
+        int dx = nx - sxc, dy = ny - syc;
+        if (dx == 0 && dy == 0) continue;
+        uint32_t col = player_color((PlayerID)p);
+        int cx = sxc * CELL_SIZE + CELL_SIZE / 2;
+        int cy = syc * CELL_SIZE + CELL_SIZE / 2;
+        int tail_x = cx - dx * 11, tail_y = cy - dy * 11;
+        int tip_x  = cx + dx * 11, tip_y  = cy + dy * 11;
+        int base_x = cx + dx * 2,  base_y = cy + dy * 2;
+        int perp_x = -dy * 5,      perp_y =  dx * 5;
+        plat_draw_line(tail_x, tail_y, base_x, base_y, col);
+        plat_draw_triangle(tip_x, tip_y,
+                           base_x + perp_x, base_y + perp_y,
+                           base_x - perp_x, base_y - perp_y, col);
     }
 
     /* Flags (only if not carried) */

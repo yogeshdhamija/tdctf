@@ -86,9 +86,11 @@ Towers may be destroyed during the planning phase, but the cost is not refunded.
 
 The game takes place on grid-based maps. Each player has three distinguished cells: a **spawn point** (where their creeps appear), an **enemy flag** (the objective they're trying to retrieve), and a **receptacle** (where the flag must be brought to score). Spawn and receptacle may be the same cell on some maps but are typically distinct.
 
-Creep pathing follows a demarcated **line** visible to both players: the cells from the spawn point through the initial flag location and back to the receptacle, plus the flag's current cell (which shifts when the flag is being carried or has been dropped). Players may obstruct this line by placing towers on the grid, provided both halves of the line — spawn → flag and flag → receptacle — remain walkable.
+There is no demarcated path on the grid. Creeps simply take the shortest unblocked route from their spawn to the enemy flag, and once they've touched the flag, the shortest unblocked route to their own receptacle. Players may place towers anywhere their zone allows, provided both halves of every creep's journey — spawn → enemy flag and enemy flag → receptacle — remain reachable.
 
-The pathing algorithm is the same for every creep, regardless of type or whether the creep is currently carrying the flag: **each tick, take the shortest unblocked path to the closest cell on the line that this creep hasn't already visited.** The flag's current cell counts as a goal whenever it's on the ground (a dropped flag pulls nearby creeps toward it); a carried flag is not a goal, so creeps don't tail-gate a teammate carrier.
+When multiple shortest paths exist (i.e. the path has any non-axis-aligned displacement), creeps prefer the cell reached by moving **horizontally** as the next step.
+
+The flag is a goal only while it's at home or dropped — not while a teammate is carrying it. A creep that hasn't yet reached the flag, but for whom the flag is currently being carried, falls back to heading toward its own receptacle. This avoids non-carriers tail-chasing a teammate carrier. If the carrier later dies and the flag drops, non-carrier creeps in phase 1 revert to heading toward the new dropped-flag location.
 
 Picking up the flag is a side-effect of arriving on the flag's cell, not a pathing branch. Retriever creeps that step onto an at-home or dropped flag automatically pick it up; the path is unchanged.
 

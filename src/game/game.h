@@ -8,7 +8,6 @@
 #define MAX_THINGS 400
 #define MAX_CREEP_UPGRADES 8
 #define MAX_BEAMS 64
-#define MAX_PATH 64
 #define SIM_TICKS_PER_TURN 300
 #define SIM_FRAMES_PER_TICK 30
 #define SIM_END_HOLD_FRAMES 90
@@ -52,7 +51,7 @@ typedef struct {
         struct {
             CreepType type;
             int       has_flag;
-            int       path_progress;
+            int       visited_flag;
             int       slow_ticks;
         } creep;
     };
@@ -106,8 +105,6 @@ typedef struct {
     int    turn;
     int    spawn_x[2], spawn_y[2];
     int    receptacle_x[2], receptacle_y[2];
-    int    path_x[2][MAX_PATH], path_y[2][MAX_PATH];
-    int    path_len[2];
 
     /* MVP additions */
     int    selected_x, selected_y;          /* -1 if none */
@@ -139,17 +136,15 @@ const char      *game_tower_name(TowerType t);
 char             game_tower_code(TowerType t);
 PlayerID         game_planning_player(void);                /* meaningful only in planning */
 
-/* Pathing primitives exposed for testing at the layer of abstraction of the
- * pathing logic itself (not the full sim). game_build_path lays out the line
- * spawn → enemy_flag → receptacle in gs->path_x/y[p]. game_pathing_next_step
- * applies the unified creep movement rule (docs/game-design.md §10): one step
- * toward the closest cell on the line that hasn't been visited yet, with the
- * enemy flag's current cell added as a goal when it's on the ground.
- * Excludes the creep's own cell from the goal set so the step always moves. */
-void             game_build_path(GameState *gs, PlayerID p);
+/* Pathing primitive exposed for testing at the layer of abstraction of the
+ * pathing logic itself (not the full sim). Per docs/game-design.md §10:
+ * each creep takes the shortest unblocked path to the enemy flag's current
+ * cell (until it touches the flag), then to its own receptacle. BFS expands
+ * horizontal neighbours before vertical, so on a tie the first step is the
+ * horizontal one. */
 int              game_pathing_next_step(const GameState *gs,
                                         int creep_x, int creep_y,
-                                        PlayerID owner, int path_progress,
+                                        PlayerID owner, int visited_flag,
                                         int *out_x, int *out_y);
 
 #endif
