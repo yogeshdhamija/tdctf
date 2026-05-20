@@ -227,8 +227,8 @@ static void game_init_state(void) {
     init_creep_upgrades(&s.players[PLAYER_RED]);
     init_creep_upgrades(&s.players[PLAYER_BLUE]);
 
-    s.spawn_x[PLAYER_RED]      = 0;  s.spawn_y[PLAYER_RED]      = 9;
-    s.spawn_x[PLAYER_BLUE]     = 29; s.spawn_y[PLAYER_BLUE]     = 11;
+    s.spawn_x[PLAYER_RED]      = 10;  s.spawn_y[PLAYER_RED]      = 9;
+    s.spawn_x[PLAYER_BLUE]     = 19; s.spawn_y[PLAYER_BLUE]     = 11;
     s.receptacle_x[PLAYER_RED]  = 4;  s.receptacle_y[PLAYER_RED]  = 4;
     s.receptacle_x[PLAYER_BLUE] = 25; s.receptacle_y[PLAYER_BLUE] = 15;
 

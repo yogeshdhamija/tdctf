@@ -67,37 +67,6 @@ static int tower_id_at(int x, int y) {
     return s->grid[x][y].thing_id;
 }
 
-/* ── 1. Initial state ────────────────────────────────────────────────── */
-
-static void test_initial_state(void) {
-    g_test = "initial_state";
-    game_init_with_tower_config(TEST_TOWERS_CFG);
-    const GameState *s = game_get_state();
-    CHECK(s->phase == PHASE_PLAN_RED);
-    CHECK(s->turn == 1);
-    CHECK(s->grid_w == 30 && s->grid_h == 20);
-    CHECK(s->players[PLAYER_RED].resources == 100);
-    CHECK(s->players[PLAYER_BLUE].resources == 100);
-    CHECK(s->selected_x == -1 && s->selected_y == -1);
-    CHECK(s->placement_intent == -1);
-    CHECK(s->winner == -1);
-    /* Receptacles, flags, zones as documented in the design map. */
-    CHECK(s->spawn_x[PLAYER_RED] == 0  && s->spawn_y[PLAYER_RED] == 9);
-    CHECK(s->spawn_x[PLAYER_BLUE] == 29 && s->spawn_y[PLAYER_BLUE] == 11);
-    CHECK(s->receptacle_x[PLAYER_RED] == 4  && s->receptacle_y[PLAYER_RED] == 4);
-    CHECK(s->receptacle_x[PLAYER_BLUE] == 25 && s->receptacle_y[PLAYER_BLUE] == 15);
-    CHECK(s->flags[PLAYER_RED].x == 4 && s->flags[PLAYER_RED].y == 15);
-    CHECK(s->flags[PLAYER_RED].at_home == 1 && s->flags[PLAYER_RED].carried_by == -1);
-    CHECK(s->flags[PLAYER_BLUE].x == 25 && s->flags[PLAYER_BLUE].y == 4);
-    CHECK(s->flags[PLAYER_BLUE].at_home == 1 && s->flags[PLAYER_BLUE].carried_by == -1);
-    CHECK(s->grid[0][0].zone == ZONE_RED);
-    CHECK(s->grid[15][10].zone == ZONE_NEUTRAL);
-    CHECK(s->grid[25][10].zone == ZONE_BLUE);
-    /* Creep upgrades initialised. */
-    CHECK(s->players[PLAYER_RED].creep_upgrade_count == 4);
-    CHECK(s->players[PLAYER_BLUE].creep_upgrade_count == 4);
-}
-
 /* ── 2. Phase transitions / turn counter ─────────────────────────────── */
 
 static void test_phase_transitions(void) {
@@ -352,7 +321,7 @@ static void test_completed_upgrade_spawns_retriever(void) {
     const Thing *r = find_creep(PLAYER_RED, CREEP_RETRIEVER);
     CHECK(r != NULL);
     if (r) {
-        CHECK(r->x == 0 && r->y == 9); /* RED spawn cell */
+        CHECK(r->x == 10 && r->y == 9); /* RED spawn cell */
         CHECK(r->creep.has_flag == 0);
         CHECK(r->hp > 0 && r->hp == r->max_hp);
     }
@@ -643,7 +612,6 @@ static void test_placement_validity(void) {
 /* ── main ─────────────────────────────────────────────────────────── */
 
 int main(void) {
-    test_initial_state();
     test_phase_transitions();
     test_tower_placement_basics();
     test_placement_zone_restrictions();

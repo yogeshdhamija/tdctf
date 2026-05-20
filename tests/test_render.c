@@ -222,7 +222,7 @@ static void test_stacked_creep_count_badge(void) {
         if (t->tag != THING_CREEP || !t->alive) continue;
         if (t->owner != PLAYER_BLUE) continue;
         count++;
-        CHECK(t->x == 29 && t->y == 11);
+        CHECK(t->x == 19 && t->y == 11);
     }
     CHECK(count == 2);
 
