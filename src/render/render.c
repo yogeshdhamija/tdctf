@@ -77,27 +77,14 @@ void render_frame(const GameState *gs) {
         plat_draw_rect(rx + 5, ry + 5, CELL_SIZE - 10, CELL_SIZE - 10, player_color((PlayerID)p));
     }
 
-    /* Spawn-direction arrows: at each spawn cell, an arrow pointing the
-     * first BFS step toward the enemy flag — i.e. where this player's
-     * creeps will head when they appear. Updates live as towers reshape
-     * the shortest path. */
+    /* Spawn markers: nested circles in the player's color — non-directional,
+     * visually paired with the nested-rectangle receptacle marker. */
     for (int p = 0; p < 2; p++) {
-        int sxc = gs->spawn_x[p], syc = gs->spawn_y[p];
-        int nx, ny;
-        if (!game_pathing_next_step(gs, sxc, syc, (PlayerID)p, 0, &nx, &ny)) continue;
-        int dx = nx - sxc, dy = ny - syc;
-        if (dx == 0 && dy == 0) continue;
+        int cx = gs->spawn_x[p] * CELL_SIZE + CELL_SIZE / 2;
+        int cy = gs->spawn_y[p] * CELL_SIZE + CELL_SIZE / 2;
         uint32_t col = player_color((PlayerID)p);
-        int cx = sxc * CELL_SIZE + CELL_SIZE / 2;
-        int cy = syc * CELL_SIZE + CELL_SIZE / 2;
-        int tail_x = cx - dx * 11, tail_y = cy - dy * 11;
-        int tip_x  = cx + dx * 11, tip_y  = cy + dy * 11;
-        int base_x = cx + dx * 2,  base_y = cy + dy * 2;
-        int perp_x = -dy * 5,      perp_y =  dx * 5;
-        plat_draw_line(tail_x, tail_y, base_x, base_y, col);
-        plat_draw_triangle(tip_x, tip_y,
-                           base_x + perp_x, base_y + perp_y,
-                           base_x - perp_x, base_y - perp_y, col);
+        plat_draw_circle(cx, cy, CELL_SIZE / 2 - 2, col);
+        plat_draw_circle(cx, cy, CELL_SIZE / 2 - 5, col);
     }
 
     /* Flags (only if not carried) */
