@@ -1,3 +1,6 @@
-build/
+build/*
+!build/index.html
+
 src/platform/emsdk/
+
 .vim/session.nvim
