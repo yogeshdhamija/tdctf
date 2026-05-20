@@ -1,6 +1,7 @@
 #include "game.h"
 #include "tower_config.h"
 #include "creep_config.h"
+#include "map_config.h"
 #include <string.h>
 #include <stdio.h>
 
@@ -216,10 +217,23 @@ static void init_creep_upgrades(Player *p) {
 /* Reset all non-catalog state. Split out so callers can pin the catalog
  * first (via tower_config_load_*) and then call this to reset everything
  * else without re-loading the default config. */
+/* Map zones come from map_config.h (which doesn't depend on game.h). The
+ * MapZone enum order matches ZoneType so we can cast — but enforce the
+ * mapping explicitly here so a future drift can't go silently wrong. */
+static ZoneType to_zone_type(unsigned char mz) {
+    switch (mz) {
+        case MAP_ZONE_RED:    return ZONE_RED;
+        case MAP_ZONE_BLUE:   return ZONE_BLUE;
+        case MAP_ZONE_DEBRIS: return ZONE_DEBRIS;
+        default:              return ZONE_NEUTRAL;
+    }
+}
+
 static void game_init_state(void) {
+    const MapConfig *m = map_config_get();
     memset(&s, 0, sizeof(s));
-    s.grid_w = 30;
-    s.grid_h = 20;
+    s.grid_w = m->width;
+    s.grid_h = m->height;
     s.turn = 1;
     s.phase = PHASE_PLAN_RED;
     s.selected_x = -1; s.selected_y = -1;
@@ -229,9 +243,7 @@ static void game_init_state(void) {
     for (int x = 0; x < s.grid_w; x++) {
         for (int y = 0; y < s.grid_h; y++) {
             s.grid[x][y].thing_id = -1;
-            if      (x < 10)  s.grid[x][y].zone = ZONE_RED;
-            else if (x >= 20) s.grid[x][y].zone = ZONE_BLUE;
-            else              s.grid[x][y].zone = ZONE_NEUTRAL;
+            s.grid[x][y].zone     = to_zone_type(m->zones[x][y]);
         }
     }
 
@@ -242,17 +254,17 @@ static void game_init_state(void) {
     init_creep_upgrades(&s.players[PLAYER_RED]);
     init_creep_upgrades(&s.players[PLAYER_BLUE]);
 
-    s.spawn_x[PLAYER_RED]      = 10;  s.spawn_y[PLAYER_RED]      = 9;
-    s.spawn_x[PLAYER_BLUE]     = 19; s.spawn_y[PLAYER_BLUE]     = 11;
-    s.receptacle_x[PLAYER_RED]  = 4;  s.receptacle_y[PLAYER_RED]  = 4;
-    s.receptacle_x[PLAYER_BLUE] = 25; s.receptacle_y[PLAYER_BLUE] = 15;
+    s.spawn_x[PLAYER_RED]       = m->red_spawn_x;  s.spawn_y[PLAYER_RED]       = m->red_spawn_y;
+    s.spawn_x[PLAYER_BLUE]      = m->blue_spawn_x; s.spawn_y[PLAYER_BLUE]      = m->blue_spawn_y;
+    s.receptacle_x[PLAYER_RED]  = m->red_recep_x;  s.receptacle_y[PLAYER_RED]  = m->red_recep_y;
+    s.receptacle_x[PLAYER_BLUE] = m->blue_recep_x; s.receptacle_y[PLAYER_BLUE] = m->blue_recep_y;
 
-    s.flags[PLAYER_RED].x = 4;  s.flags[PLAYER_RED].y = 15;
+    s.flags[PLAYER_RED].x = m->red_flag_x; s.flags[PLAYER_RED].y = m->red_flag_y;
     s.flags[PLAYER_RED].owner      = PLAYER_RED;
     s.flags[PLAYER_RED].carried_by = -1;
     s.flags[PLAYER_RED].at_home    = 1;
 
-    s.flags[PLAYER_BLUE].x = 25; s.flags[PLAYER_BLUE].y = 4;
+    s.flags[PLAYER_BLUE].x = m->blue_flag_x; s.flags[PLAYER_BLUE].y = m->blue_flag_y;
     s.flags[PLAYER_BLUE].owner      = PLAYER_BLUE;
     s.flags[PLAYER_BLUE].carried_by = -1;
     s.flags[PLAYER_BLUE].at_home    = 1;
@@ -261,24 +273,28 @@ static void game_init_state(void) {
 void game_init(void) {
     tower_config_load_default();
     creep_config_load_default();
+    map_config_load_default();
     game_init_state();
 }
 
 void game_init_with_tower_config(const char *cfg) {
     tower_config_load_from_string(cfg);
     creep_config_load_default();
+    map_config_load_default();
     game_init_state();
 }
 
 void game_init_with_creep_config(const char *cfg) {
     tower_config_load_default();
     creep_config_load_from_string(cfg);
+    map_config_load_default();
     game_init_state();
 }
 
 void game_init_with_configs(const char *tower_cfg, const char *creep_cfg) {
     tower_config_load_from_string(tower_cfg);
     creep_config_load_from_string(creep_cfg);
+    map_config_load_default();
     game_init_state();
 }
 
