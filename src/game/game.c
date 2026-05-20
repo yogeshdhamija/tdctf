@@ -232,7 +232,7 @@ static void game_init_state(void) {
     s.players[PLAYER_RED].resources       = 100;
     s.players[PLAYER_RED].income_per_turn = 0;
     s.players[PLAYER_BLUE].resources       = 100;
-    s.players[PLAYER_BLUE].income_per_turn = 20;
+    s.players[PLAYER_BLUE].income_per_turn = 0;
     init_creep_upgrades(&s.players[PLAYER_RED]);
     init_creep_upgrades(&s.players[PLAYER_BLUE]);
 
