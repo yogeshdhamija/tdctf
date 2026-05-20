@@ -141,7 +141,7 @@ void on_right_click(void) {
 
 /* ── Frame stats ── */
 
-#define FRAME_RING_SIZE 3600  /* ~60s at 60fps */
+#define FRAME_RING_SIZE 360  /* ~6s at 60fps */
 static double g_frame_deltas[FRAME_RING_SIZE];
 static int    g_frame_ring_pos;
 static int    g_frame_ring_count;
