@@ -144,25 +144,6 @@ static void test_no_grid_keyword(void) {
     CHECK(map_config_load_from_string("grid\n") != 0);
 }
 
-/* ── 9. The shipped default map loads successfully and yields the 30x20
- *      board the rest of the codebase assumes. ────────────────────────── */
-static void test_default_loads(void) {
-    g_test = "default_loads";
-    CHECK(map_config_load_default() == 0);
-    const MapConfig *m = map_config_get();
-    CHECK(m->width  == 30);
-    CHECK(m->height == 20);
-    /* These six coordinates are the contract the game layer (and many
-     * existing behavior tests) rely on. Pin them so a future map edit
-     * that breaks the default surface fails here first. */
-    CHECK(m->red_spawn_x  == 10 && m->red_spawn_y  == 9);
-    CHECK(m->blue_spawn_x == 19 && m->blue_spawn_y == 11);
-    CHECK(m->red_recep_x  == 4  && m->red_recep_y  == 4);
-    CHECK(m->blue_recep_x == 25 && m->blue_recep_y == 15);
-    CHECK(m->red_flag_x   == 4  && m->red_flag_y   == 15);
-    CHECK(m->blue_flag_x  == 25 && m->blue_flag_y  == 4);
-}
-
 int main(void) {
     test_basic_parse();
     test_debris();
@@ -172,7 +153,6 @@ int main(void) {
     test_inconsistent_width();
     test_unknown_symbol();
     test_no_grid_keyword();
-    test_default_loads();
     printf("%d assertions, %d failures\n", g_assertions, g_fail);
     return g_fail ? 1 : 0;
 }

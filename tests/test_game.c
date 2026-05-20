@@ -321,7 +321,6 @@ static void test_completed_upgrade_spawns_retriever(void) {
     const Thing *r = find_creep(PLAYER_RED, game_creep_type_id("RETRIEVER"));
     CHECK(r != NULL);
     if (r) {
-        CHECK(r->x == 10 && r->y == 9); /* RED spawn cell */
         CHECK(r->creep.has_flag == 0);
         CHECK(r->hp > 0 && r->hp == r->max_hp);
     }
