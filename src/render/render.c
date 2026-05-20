@@ -336,9 +336,9 @@ void render_frame(const GameState *gs) {
         plat_draw_text(sx + 10, gh - 20, gs->status_msg, 0xFFCC66);
     }
 
-    /* Frame stats overlay (bottom-left of grid) */
+    /* Frame stats overlay */
     FrameStats fs;
     plat_get_frame_stats(&fs);
     snprintf(buf, sizeof(buf), "FPS:%.0f  MaxLag:%.0fms", fs.fps, fs.max_lag_ms);
-    plat_draw_text(4, gh - 16, buf, 0x888888);
+    plat_draw_text(gw + 10, gh - 16, buf, 0x888888);
 }
