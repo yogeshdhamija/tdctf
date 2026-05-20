@@ -13,7 +13,7 @@ EM_JS(void, js_canvas_init, (int w, int h), {
     canvas.height = h;
     canvas.style.display = "block";
     window._ctx = canvas.getContext("2d");
-    canvas.addEventListener("click", function(e) {
+    canvas.addEventListener("mousedown", function(e) {
         var rect = canvas.getBoundingClientRect();
         var sx = canvas.width  / rect.width;
         var sy = canvas.height / rect.height;
