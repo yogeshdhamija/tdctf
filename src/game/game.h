@@ -134,6 +134,8 @@ int              game_tower_count(void);                    /* live tower count 
 int              game_tower_id(const char *name);           /* catalog id -> index, or -1 */
 int              game_tower_cost(TowerType t);              /* placement cost (level 1) */
 int              game_tower_upgrade_cost(TowerType t, int from_level); /* cost of from_level -> from_level+1; 0 if at max */
+int              game_tower_build_turns(TowerType t);
+int              game_tower_upgrade_turns(TowerType t, int from_level);
 int              game_tower_max_level(TowerType t);         /* number of levels defined */
 const char      *game_tower_name(TowerType t);
 char             game_tower_code(TowerType t);

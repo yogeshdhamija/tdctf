@@ -27,6 +27,15 @@ int  game_tower_upgrade_cost(TowerType t, int from_level) {
     return cfg->level[from_level].cost;
 }
 
+int game_tower_build_turns(TowerType t) {
+    return spec(t)->level[0].build_turns;
+}
+int game_tower_upgrade_turns(TowerType t, int from_level) {
+    const TowerConfig *cfg = spec(t);
+    if (from_level < 1 || from_level >= cfg->level_count) return 0;
+    return cfg->level[from_level].build_turns;
+}
+
 const char *game_tower_name(TowerType t) { return spec(t)->name; }
 char        game_tower_code(TowerType t) { return spec(t)->code; }
 

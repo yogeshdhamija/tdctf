@@ -263,10 +263,11 @@ void render_frame(const GameState *gs) {
         line += 18;
         for (int i = 0; i < game_tower_count(); i++) {
             int cost    = game_tower_cost(i);
+            int build_turns = game_tower_build_turns(i);
             int active  = (gs->placement_intent == i);
             int enabled = gs->players[p].resources >= cost;
-            snprintf(buf, sizeof(buf), "[%c] %-8s $%d",
-                     game_tower_code(i), game_tower_name(i), cost);
+            snprintf(buf, sizeof(buf), "[%c] %-8s $%d %dt",
+                     game_tower_code(i), game_tower_name(i), cost, build_turns);
             draw_button(BTN_PLACE_TOWER_BASE + i, sx + 10, line,
                         SIDEBAR_W - 20, 22, buf, active, enabled);
             line += 26;
@@ -312,8 +313,9 @@ void render_frame(const GameState *gs) {
                 if (t->owner == p) {
                     int max_lvl = game_tower_max_level(t->tower.type);
                     int up_cost = game_tower_upgrade_cost(t->tower.type, t->tower.level);
+                    int up_build_turns = game_tower_upgrade_turns(t->tower.type, t->tower.level);
                     char ulbl[32];
-                    snprintf(ulbl, sizeof(ulbl), "Upg $%d", up_cost);
+                    snprintf(ulbl, sizeof(ulbl), "Upg $%d %dt", up_cost, up_build_turns);
                     int bw = (SIDEBAR_W - 30) / 2;
                     int up_enabled = (t->tower.level < max_lvl) && (t->tower.build_turns == 0)
                                      && (gs->players[p].resources >= up_cost);
