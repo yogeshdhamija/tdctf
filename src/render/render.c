@@ -255,17 +255,19 @@ void render_frame(const GameState *gs) {
         line += 18;
         for (int i = 0; i < gs->players[p].creep_upgrade_count; i++) {
             const CreepUpgrade *u = &gs->players[p].creep_upgrades[i];
+            const char *desc = game_creep_upgrade_description(i);
             if (u->completed) {
-                snprintf(buf, sizeof(buf), "%s  READY", u->description);
+                snprintf(buf, sizeof(buf), "%s  READY", desc);
                 plat_fill_rect(sx + 10, line, SIDEBAR_W - 20, 20, 0x183018);
                 plat_draw_text(sx + 14, line + 3, buf, 0x66CC66);
             } else if (u->purchased) {
-                snprintf(buf, sizeof(buf), "%s  %dt", u->description, u->turns_remaining);
+                snprintf(buf, sizeof(buf), "%s  %dt", desc, u->turns_remaining);
                 plat_fill_rect(sx + 10, line, SIDEBAR_W - 20, 20, 0x252535);
                 plat_draw_text(sx + 14, line + 3, buf, 0xAAAACC);
             } else {
-                snprintf(buf, sizeof(buf), "%s $%d", u->description, u->cost);
-                int enabled = gs->players[p].resources >= u->cost;
+                int cost = game_creep_upgrade_cost(i);
+                snprintf(buf, sizeof(buf), "%s $%d", desc, cost);
+                int enabled = gs->players[p].resources >= cost;
                 draw_button(BTN_BUY_UPGRADE_0 + i, sx + 10, line,
                             SIDEBAR_W - 20, 20, buf, 0, enabled);
             }

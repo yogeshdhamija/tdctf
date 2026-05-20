@@ -7,7 +7,7 @@
 | Rendering | HTML5 `<canvas>` 2D context, called from C via Emscripten's SDL2 or raw JS interop |
 | Input | Mouse clicks on canvas — grid cell selection and UI button regions |
 | UI | Rendered entirely on canvas — text and rectangles in a sidebar region to the right of the grid |
-| Build | Single `Makefile` — `emcc` to produce `.wasm` + `.js` glue + `index.html` shell. A pre-step converts `data/towers.cfg` into a C string literal header (`build/tower_config_data.h`) embedded into the binary. |
+| Build | Single `Makefile` — `emcc` to produce `.wasm` + `.js` glue + `index.html` shell. Pre-steps convert `data/towers.cfg` and `data/creep_upgrades.cfg` into C string literal headers (`build/tower_config_data.h`, `build/creep_config_data.h`) embedded into the binary. |
 
 **No external game libraries.** SDL2 only if needed for canvas abstraction; otherwise raw `emscripten.h` calls to a thin JS rendering layer. **No HTML/CSS UI** — everything is drawn on the canvas.
 
@@ -59,6 +59,7 @@ The C code is organized into three layers with strict dependency direction: **Pl
 | `thing.c/h` | Tagged-union Thing type, creation, tower/creep logic, combat, spawning, movement |
 | `grid.c/h` | Grid representation, zones, BFS pathfinding |
 | `tower_config.c/h` | Parses the embedded `data/towers.cfg` text into a `TowerCatalog`. Tower **types** are not hardcoded — towers are declared in the config file and assigned runtime integer ids in declaration order. Each level is its own section and fully redefines the tower's stats at that level (cost, hp, build_turns, dmg, range, aoe, slow, cooldown, income); any combination of stats is permitted, so a single tower can damage, AoE, slow, and generate income simultaneously. `game.c` looks up everything via `tower_config_get()`. The render layer iterates `game_tower_count()` to build the placement palette dynamically. |
+| `creep_config.c/h` | Parses the embedded `data/creep_upgrades.cfg` text into a `CreepUpgradeCatalog`. Same shape as `tower_config`: upgrades are declared in the cfg file and assigned runtime indices in declaration order. Per-upgrade fields are `cost`, `research_turns`, `add_retrievers`, `add_siege`, `description`. Per-player runtime state (`purchased`/`completed`/`turns_remaining`) lives on the `Player` struct in `game.h`, indexed parallel to the catalog. `game.c` exposes `game_creep_upgrade_count/cost/research_turns/description` accessors for the render layer. |
 
 **Render layer** — includes game headers to read state. Calls abstract drawing primitives declared in `platform.h`. No platform-specific code.
 

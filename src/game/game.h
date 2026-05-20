@@ -6,6 +6,10 @@
 #define MAX_GRID_W 40
 #define MAX_GRID_H 30
 #define MAX_THINGS 400
+/* Player array size — matches CREEP_UPGRADE_MAX_COUNT in creep_config.h.
+ * Kept as a local define so game.h doesn't need to pull in the catalog
+ * header (mirrors how MAX_THINGS sizes the things array without dragging
+ * tower_config.h into game.h). */
 #define MAX_CREEP_UPGRADES 8
 #define MAX_BEAMS 64
 #define SIM_TICKS_PER_TURN 300
@@ -60,16 +64,15 @@ typedef struct {
     int      thing_id;
 } Cell;
 
+/* Per-player runtime state for one creep upgrade. The static spec
+ * (cost, research_turns, add_retrievers, add_siege, description) lives in
+ * the catalog at data/creep_upgrades.cfg, accessed via game_creep_upgrade_*
+ * accessors. The array index into Player.creep_upgrades matches the
+ * catalog index. */
 typedef struct {
-    int  id;
-    int  cost;
-    int  research_turns;
-    int  turns_remaining;
-    int  purchased;
-    int  completed;
-    int  add_retrievers;
-    int  add_siege;
-    char description[64];
+    int turns_remaining;
+    int purchased;
+    int completed;
 } CreepUpgrade;
 
 typedef struct {
@@ -116,8 +119,10 @@ typedef struct {
 } GameState;
 
 /* Lifecycle */
-void             game_init(void);                           /* loads the embedded data/towers.cfg */
-void             game_init_with_tower_config(const char *cfg); /* test hook: load `cfg` instead */
+void             game_init(void);                           /* loads embedded data/towers.cfg + data/creep_upgrades.cfg */
+void             game_init_with_tower_config(const char *cfg); /* test hook: load `cfg` instead of the default towers; creep upgrades use the default */
+void             game_init_with_creep_config(const char *cfg); /* test hook: load `cfg` instead of the default creep upgrades; towers use the default */
+void             game_init_with_configs(const char *tower_cfg, const char *creep_cfg); /* test hook: pin both catalogs from fixtures */
 void             game_frame(void);                          /* advance one frame (~60Hz) */
 const GameState *game_get_state(void);
 
@@ -139,6 +144,14 @@ int              game_tower_upgrade_turns(TowerType t, int from_level);
 int              game_tower_max_level(TowerType t);         /* number of levels defined */
 const char      *game_tower_name(TowerType t);
 char             game_tower_code(TowerType t);
+
+/* Creep upgrade catalog accessors. Per-player dynamic state (purchased /
+ * completed / turns_remaining) lives on Player.creep_upgrades[idx]. */
+int              game_creep_upgrade_count(void);
+int              game_creep_upgrade_cost(int idx);
+int              game_creep_upgrade_research_turns(int idx);
+const char      *game_creep_upgrade_description(int idx);
+
 PlayerID         game_planning_player(void);                /* meaningful only in planning */
 
 /* Pathing primitive exposed for testing at the layer of abstraction of the

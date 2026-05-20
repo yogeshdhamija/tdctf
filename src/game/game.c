@@ -1,5 +1,6 @@
 #include "game.h"
 #include "tower_config.h"
+#include "creep_config.h"
 #include <string.h>
 #include <stdio.h>
 
@@ -38,6 +39,17 @@ int game_tower_upgrade_turns(TowerType t, int from_level) {
 
 const char *game_tower_name(TowerType t) { return spec(t)->name; }
 char        game_tower_code(TowerType t) { return spec(t)->code; }
+
+/* Creep upgrade catalog lookups. The catalog is global; per-player runtime
+ * state (purchased / completed / turns_remaining) is on Player.creep_upgrades
+ * indexed parallel to the catalog. */
+static const CreepUpgradeConfig *cu_spec(int idx) {
+    return &creep_config_get()->upgrades[idx];
+}
+int  game_creep_upgrade_count(void)               { return creep_config_get()->count; }
+int  game_creep_upgrade_cost(int idx)             { return cu_spec(idx)->cost; }
+int  game_creep_upgrade_research_turns(int idx)   { return cu_spec(idx)->research_turns; }
+const char *game_creep_upgrade_description(int idx) { return cu_spec(idx)->description; }
 
 PlayerID game_planning_player(void) {
     return (s.phase == PHASE_PLAN_BLUE) ? PLAYER_BLUE : PLAYER_RED;
@@ -180,29 +192,14 @@ static int paths_valid(void) {
 
 /* ── Creep upgrade init ─────────────────────────────────── */
 
+/* Per-player runtime state mirrors the catalog 1:1: index i holds the
+ * dynamic state for catalog upgrade i. Static spec (cost, research_turns,
+ * description, ...) is read directly from the catalog at use time. */
 static void init_creep_upgrades(Player *p) {
-    p->creep_upgrade_count = 4;
-    CreepUpgrade *u;
-
-    u = &p->creep_upgrades[0];
-    memset(u, 0, sizeof(*u));
-    u->id = 0; u->cost = 30; u->research_turns = 1; u->add_retrievers = 1;
-    strcpy(u->description, "+1 Retriever");
-
-    u = &p->creep_upgrades[1];
-    memset(u, 0, sizeof(*u));
-    u->id = 1; u->cost = 40; u->research_turns = 1; u->add_siege = 2;
-    strcpy(u->description, "+2 Siege");
-
-    u = &p->creep_upgrades[2];
-    memset(u, 0, sizeof(*u));
-    u->id = 2; u->cost = 60; u->research_turns = 2; u->add_retrievers = 2;
-    strcpy(u->description, "+2 Retrievers");
-
-    u = &p->creep_upgrades[3];
-    memset(u, 0, sizeof(*u));
-    u->id = 3; u->cost = 70; u->research_turns = 2; u->add_siege = 2;
-    strcpy(u->description, "+2 Siege II");
+    int n = creep_config_get()->count;
+    if (n > MAX_CREEP_UPGRADES) n = MAX_CREEP_UPGRADES;
+    p->creep_upgrade_count = n;
+    for (int i = 0; i < n; i++) memset(&p->creep_upgrades[i], 0, sizeof(p->creep_upgrades[i]));
 }
 
 /* ── Init ───────────────────────────────────────────────── */
@@ -254,11 +251,25 @@ static void game_init_state(void) {
 
 void game_init(void) {
     tower_config_load_default();
+    creep_config_load_default();
     game_init_state();
 }
 
 void game_init_with_tower_config(const char *cfg) {
     tower_config_load_from_string(cfg);
+    creep_config_load_default();
+    game_init_state();
+}
+
+void game_init_with_creep_config(const char *cfg) {
+    tower_config_load_default();
+    creep_config_load_from_string(cfg);
+    game_init_state();
+}
+
+void game_init_with_configs(const char *tower_cfg, const char *creep_cfg) {
+    tower_config_load_from_string(tower_cfg);
+    creep_config_load_from_string(creep_cfg);
     game_init_state();
 }
 
@@ -369,11 +380,12 @@ void game_buy_creep_upgrade(int idx) {
     PlayerID p = game_planning_player();
     if (idx < 0 || idx >= s.players[p].creep_upgrade_count) return;
     CreepUpgrade *u = &s.players[p].creep_upgrades[idx];
-    if (u->purchased)                  { set_status("Already purchased"); return; }
-    if (s.players[p].resources < u->cost) { set_status("Not enough resources"); return; }
-    s.players[p].resources -= u->cost;
+    const CreepUpgradeConfig *cfg = cu_spec(idx);
+    if (u->purchased)                       { set_status("Already purchased");   return; }
+    if (s.players[p].resources < cfg->cost) { set_status("Not enough resources"); return; }
+    s.players[p].resources -= cfg->cost;
     u->purchased = 1;
-    u->turns_remaining = u->research_turns;
+    u->turns_remaining = cfg->research_turns;
 }
 
 /* ── Simulation ─────────────────────────────────────────── */
@@ -382,10 +394,11 @@ static int count_spawns(PlayerID p, CreepType ct) {
     int n = 0;
     if (ct == CREEP_RETRIEVER) n = 0; /* base */
     for (int i = 0; i < s.players[p].creep_upgrade_count; i++) {
-        CreepUpgrade *u = &s.players[p].creep_upgrades[i];
+        const CreepUpgrade *u = &s.players[p].creep_upgrades[i];
         if (!u->completed) continue;
-        if (ct == CREEP_RETRIEVER) n += u->add_retrievers;
-        else if (ct == CREEP_SIEGE) n += u->add_siege;
+        const CreepUpgradeConfig *cfg = cu_spec(i);
+        if (ct == CREEP_RETRIEVER) n += cfg->add_retrievers;
+        else if (ct == CREEP_SIEGE) n += cfg->add_siege;
     }
     return n;
 }

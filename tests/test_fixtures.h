@@ -87,4 +87,37 @@ static const char TEST_TOWERS_CFG[] =
     "  build_turns 1\n"
     "  income 20\n";
 
+/* Creep-upgrade fixture for behavior tests. Mirrors the slot-by-slot
+ * shape that test_game.c and test_render.c hard-code:
+ *   slot 0: +1 retriever, 1-turn research
+ *   slot 1: +2 siege,      1-turn research
+ *   slot 2: +2 retrievers, 2-turn research, cost 60 (creep_upgrade_purchase_and_research)
+ *   slot 3: +2 siege II,   2-turn research
+ * Slot order is what test_game.c references by index, so changes here must
+ * keep those four slots aligned. */
+static const char TEST_CREEP_UPGRADES_CFG[] =
+    "upgrade RETRIEVER_1\n"
+    "  cost            30\n"
+    "  research_turns  1\n"
+    "  add_retrievers  1\n"
+    "  description     +1 Retriever\n"
+
+    "upgrade SIEGE_2\n"
+    "  cost            40\n"
+    "  research_turns  1\n"
+    "  add_siege       2\n"
+    "  description     +2 Siege\n"
+
+    "upgrade RETRIEVER_2X\n"
+    "  cost            60\n"
+    "  research_turns  2\n"
+    "  add_retrievers  2\n"
+    "  description     +2 Retrievers\n"
+
+    "upgrade SIEGE_2_II\n"
+    "  cost            70\n"
+    "  research_turns  2\n"
+    "  add_siege       2\n"
+    "  description     +2 Siege II\n";
+
 #endif
