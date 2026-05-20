@@ -89,9 +89,9 @@ static void test_phase_transitions(void) {
     run_sim_to_completion();
     CHECK(s->phase == PHASE_PLAN_RED);
     CHECK(s->turn == prev_turn + 1);
-    /* Base income (+20/turn) applied to both players at sim end. */
-    CHECK(s->players[PLAYER_RED].resources == 120);
-    CHECK(s->players[PLAYER_BLUE].resources == 120);
+    /* Base income (+0/turn) applied to both players at sim end. */
+    CHECK(s->players[PLAYER_RED].resources == 100);
+    CHECK(s->players[PLAYER_BLUE].resources == 100);
 }
 
 /* ── 3. Tower placement: cost, attributes, intent clearing ──────────── */
@@ -343,27 +343,27 @@ static void test_resource_tower_income(void) {
     enter_sim();
     run_sim_to_completion();
     CHECK(s->things[id].tower.build_turns == 2);
-    CHECK(s->players[PLAYER_RED].income_per_turn == 20);
+    CHECK(s->players[PLAYER_RED].income_per_turn == 0);
 
     /* Turn 2: 2→1 — still building. */
     enter_sim();
     run_sim_to_completion();
     CHECK(s->things[id].tower.build_turns == 1);
-    CHECK(s->players[PLAYER_RED].income_per_turn == 20);
+    CHECK(s->players[PLAYER_RED].income_per_turn == 0);
 
     /* Turn 3: 1→0. end_simulation decrements first, then recomputes income,
      * so the recompute already sees build_turns==0 and adds the +10. */
     enter_sim();
     run_sim_to_completion();
     CHECK(s->things[id].tower.build_turns == 0);
-    CHECK(s->players[PLAYER_RED].income_per_turn == 30);
+    CHECK(s->players[PLAYER_RED].income_per_turn == 10);
 
     /* Subsequent turns: income stays at 30, resources tick up by 30. */
     int res_before = s->players[PLAYER_RED].resources;
     enter_sim();
     run_sim_to_completion();
-    CHECK(s->players[PLAYER_RED].income_per_turn == 30);
-    CHECK(s->players[PLAYER_RED].resources == res_before + 30);
+    CHECK(s->players[PLAYER_RED].income_per_turn == 10);
+    CHECK(s->players[PLAYER_RED].resources == res_before + 10);
 }
 
 /* ── 11. Gunner damages a creep in range ─────────────────────────────── */

@@ -579,7 +579,7 @@ static void end_simulation(void) {
         t->beam_ttl = 0;
     }
     for (int p = 0; p < 2; p++) {
-        int inc = 20;
+        int inc = 0;
         for (int i = 0; i < s.thing_count; i++) {
             Thing *t = &s.things[i];
             if (t->tag != THING_TOWER || !t->alive) continue;
