@@ -236,21 +236,11 @@ void render_frame(const GameState *gs) {
         int current = (gs->phase == PHASE_PLAN_RED && p == PLAYER_RED) ||
                       (gs->phase == PHASE_PLAN_BLUE && p == PLAYER_BLUE);
         if (current)
-            plat_fill_rect(sx + 4, line - 3, SIDEBAR_W - 8, 44, 0x2A2A40);
+            plat_fill_rect(sx + 4, line - 5, SIDEBAR_W - 8, 22, 0x2A2A40);
         snprintf(buf, sizeof(buf), "%s  $%d  +%d",
                  p == PLAYER_RED ? "RED" : "BLUE",
                  gs->players[p].resources, gs->players[p].income_per_turn);
         plat_draw_text(sx + 10, line, buf, player_color((PlayerID)p));
-        line += 18;
-        int rcount = 0, scount = 0;
-        for (int i = 0; i < gs->players[p].creep_upgrade_count; i++) {
-            const CreepUpgrade *u = &gs->players[p].creep_upgrades[i];
-            if (!u->completed) continue;
-            rcount += u->add_retrievers;
-            scount += u->add_siege;
-        }
-        snprintf(buf, sizeof(buf), "  spawn %dR %dS", rcount, scount);
-        plat_draw_text(sx + 10, line, buf, 0x888888);
         line += 22;
     }
 
