@@ -12,8 +12,8 @@
  * tower_config.h into game.h). */
 #define MAX_CREEP_UPGRADES 8
 #define MAX_BEAMS 64
-#define SIM_TICKS_PER_TURN 300
-#define SIM_FRAMES_PER_TICK 30
+#define SIM_TICKS_PER_TURN 100
+#define SIM_FRAMES_PER_TICK 8
 #define SIM_END_HOLD_FRAMES 90
 
 typedef enum { PLAYER_RED = 0, PLAYER_BLUE = 1 } PlayerID;

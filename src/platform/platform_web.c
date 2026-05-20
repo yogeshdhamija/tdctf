@@ -5,6 +5,9 @@
 #include "../render/render.h"
 #include "platform.h"
 
+static double last_time = 0.0;
+static double accumulator = 0.0;
+
 /* ── JS interop: canvas 2D drawing ── */
 
 EM_JS(void, js_canvas_init, (int w, int h), {
@@ -184,8 +187,21 @@ static void update_frame_stats(void) {
 /* ── Main loop ── */
 
 static void frame(void) {
+    double current_time = emscripten_get_now(); // Returns ms
+    double dt = current_time - last_time;
+    last_time = current_time;
+    if (dt > 250.0) {
+        dt = 250.0;
+    }
+    accumulator += dt;
+
     update_frame_stats();
-    game_frame();
+
+    while (accumulator >= MS_PER_LOGIC_FRAME) {
+        game_frame(); // Runs exactly 60 times per real-time second
+        accumulator -= MS_PER_LOGIC_FRAME;
+    }
+
     render_frame(game_get_state());
 }
 
@@ -194,6 +210,7 @@ int main(void) {
     const GameState *gs = game_get_state();
     int canvas_w = CELL_SIZE * gs->grid_w + SIDEBAR_W;
     int canvas_h = CELL_SIZE * gs->grid_h;
+    last_time = emscripten_get_now();
     js_canvas_init(canvas_w, canvas_h);
     emscripten_set_main_loop(frame, 0, 1);
     return 0;

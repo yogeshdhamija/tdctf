@@ -3,6 +3,9 @@
 
 #include <stdint.h>
 
+#define LOGIC_FPS 60.0
+#define MS_PER_LOGIC_FRAME (1000.0 / LOGIC_FPS)
+
 void plat_clear(uint32_t color);
 void plat_draw_rect(int x, int y, int w, int h, uint32_t color);
 void plat_fill_rect(int x, int y, int w, int h, uint32_t color);
