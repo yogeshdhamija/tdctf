@@ -1,7 +1,1 @@
-- See `README.md` for how to test & build & run.
-- See `docs/game-design.md` for a understanding of what is being built.
-- See `docs/tech-design.md` for a understanding of the code.
-- Before writing any code, read and follow `docs/ai-instructions/coding-norms.md`.
-- As part of making any changes, read and follow `docs/ai-instructions/context-preservation.md`
-
-If any files are missing, stop and notify.
+You must read `README.md` before every prompt. If any files you're directed to read (either here or by the README) are missing, stop and notify.
