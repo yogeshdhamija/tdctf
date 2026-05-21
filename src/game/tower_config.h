@@ -30,6 +30,11 @@ typedef struct {
     int slow;
     int cooldown;
     int income;        /* per-turn resource generation while at this level. */
+    int crit_chance;   /* percent (0-100) chance of dealing `crit_dmg` instead
+                        * of `dmg`. Rolled once per attack — AoE attacks apply
+                        * the rolled damage uniformly to all hit targets. */
+    int crit_dmg;      /* damage substituted for `dmg` when the crit roll
+                        * succeeds. Ignored when crit_chance is 0. */
 } TowerLevelStats;
 
 typedef struct {

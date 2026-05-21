@@ -7,6 +7,20 @@
 
 static GameState s;
 
+/* Deterministic xorshift32 PRNG. Seeded to a fixed value by game_init_state
+ * so identical play sequences produce identical sim outcomes, and the state
+ * lives in GameState.rng_state so the snapshot round-trips it — resuming
+ * from a mid-game snapshot reproduces the same future rolls. Used today
+ * only by the tower crit roll; add new consumers here. */
+static uint32_t rng_next(void) {
+    uint32_t x = s.rng_state;
+    x ^= x << 13;
+    x ^= x >> 17;
+    x ^= x << 5;
+    s.rng_state = x;
+    return x;
+}
+
 /* Tower stats live in data/towers.cfg, embedded as TOWER_CONFIG_DEFAULT and
  * parsed into a TowerCatalog at game_init(). All tower lookups go through
  * the catalog — there is no hardcoded tower data in this file. */
@@ -232,6 +246,7 @@ static ZoneType to_zone_type(unsigned char mz) {
 static void game_init_state(void) {
     const MapConfig *m = map_config_get();
     memset(&s, 0, sizeof(s));
+    s.rng_state = 0x9E3779B9u; /* fixed seed → deterministic sim across runs */
     s.grid_w = m->width;
     s.grid_h = m->height;
     s.turn = 1;
@@ -545,6 +560,12 @@ static void sim_one_tick(void) {
         t->last_target_x = tgt->x; t->last_target_y = tgt->y;
         t->beam_ttl = 2;
         t->tower.cooldown = atk->cooldown;
+        /* One crit roll per attack. AoE then applies the same `dmg` to every
+         * cell in the splash — the design is "crit replaces dmg", not "each
+         * target rolls independently". */
+        int dmg = atk->dmg;
+        if (atk->crit_chance > 0 && (rng_next() % 100u) < (uint32_t)atk->crit_chance)
+            dmg = atk->crit_dmg;
         if (atk->aoe > 0) {
             for (int j = 0; j < s.thing_count; j++) {
                 Thing *c = &s.things[j];
@@ -552,12 +573,12 @@ static void sim_one_tick(void) {
                 if (c->owner == t->owner) continue;
                 if (abs_i(c->x - tgt->x) <= atk->aoe &&
                     abs_i(c->y - tgt->y) <= atk->aoe) {
-                    c->hp -= atk->dmg;
+                    c->hp -= dmg;
                     if (atk->slow > 0) c->creep.slow_ticks = atk->slow;
                 }
             }
         } else {
-            tgt->hp -= atk->dmg;
+            tgt->hp -= dmg;
         }
     }
 
@@ -756,6 +777,11 @@ int game_snapshot_encode(char *out, int out_size) {
            s.flags[PLAYER_RED].x, s.flags[PLAYER_RED].y, s.flags[PLAYER_RED].at_home,
            s.flags[PLAYER_BLUE].x, s.flags[PLAYER_BLUE].y, s.flags[PLAYER_BLUE].at_home);
 
+    /* Encode as signed: read_int parses into `int`, which overflows for
+     * uint32 values > INT_MAX. The signed reinterpretation round-trips the
+     * bit pattern exactly via the (uint32_t) cast on load. */
+    APPEND("~N%d", (int)(int32_t)s.rng_state);
+
     return (int)(p - out);
 }
 
@@ -918,6 +944,11 @@ int game_snapshot_load(const char *src) {
             case 'b': src = parse_upgrades(src, PLAYER_BLUE); break;
             case 'W': src = parse_towers(src);                break;
             case 'F': src = parse_flags(src);                 break;
+            case 'N': {
+                int v; src = read_int(src, &v);
+                s.rng_state = (uint32_t)v;
+                break;
+            }
             default:
                 /* Unknown section: skip to next ~ so future format
                  * extensions don't break old clients. */

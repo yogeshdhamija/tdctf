@@ -19,6 +19,9 @@
  *               build_turns=3, L1.income=10 → test_resource_tower_income
  *                                            counts 3 turns then +30/turn.
  *   SLAMMER     build_turns=2, slow>0, dmg>0 → test_slammer_slows_creep.
+ *   CRITTER     crit_chance=100, dmg=1, crit_dmg=999 → test_tower_crit_uses_crit_dmg
+ *                                            pins always-crit + lethal value so the
+ *                                            test can assert from a single shot.
  * The other numbers exist for plausibility — tests don't pin them. */
 static const char TEST_TOWERS_CFG[] =
     "tower BLOCKER\n"
@@ -85,7 +88,20 @@ static const char TEST_TOWERS_CFG[] =
     "  cost 80\n"
     "  hp 50\n"
     "  build_turns 1\n"
-    "  income 20\n";
+    "  income 20\n"
+
+    "tower CRITTER\n"
+    "  code C\n"
+    "  name Critter\n"
+    "level CRITTER 1\n"
+    "  cost 30\n"
+    "  hp 50\n"
+    "  build_turns 0\n"
+    "  dmg 1\n"
+    "  crit_chance 100\n"
+    "  crit_dmg 999\n"
+    "  range 3\n"
+    "  cooldown 2\n";
 
 /* Creep-type + creep-upgrade fixture for behavior tests. Mirrors the
  * slot-by-slot shape that test_game.c and test_render.c hard-code:

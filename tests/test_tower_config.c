@@ -63,7 +63,9 @@ static void test_combined_features(void) {
         "  aoe 1\n"
         "  slow 1\n"
         "  cooldown 2\n"
-        "  income 5\n";
+        "  income 5\n"
+        "  crit_chance 25\n"
+        "  crit_dmg 17\n";
     CHECK(tower_config_load_from_string(src) == 0);
     int bi = tower_config_lookup("BUFFALO");
     CHECK(bi >= 0);
@@ -73,6 +75,20 @@ static void test_combined_features(void) {
     CHECK(L->cost == 75 && L->hp == 60 && L->build_turns == 2);
     CHECK(L->dmg == 4 && L->range == 3 && L->aoe == 1);
     CHECK(L->slow == 1 && L->cooldown == 2 && L->income == 5);
+    CHECK(L->crit_chance == 25 && L->crit_dmg == 17);
+
+    /* Unspecified crit_* keys default to 0 — implicit-zero is what callers
+     * rely on to mean "no crits", so test it explicitly. */
+    const char *no_crit =
+        "tower PLAIN\n"
+        "  code P\n"
+        "level PLAIN 1\n"
+        "  cost 1\n"
+        "  hp 1\n"
+        "  dmg 3\n";
+    CHECK(tower_config_load_from_string(no_crit) == 0);
+    const TowerConfig *p = &tower_config_get()->towers[tower_config_lookup("PLAIN")];
+    CHECK(p->level[0].crit_chance == 0 && p->level[0].crit_dmg == 0);
 }
 
 /* ── 4. Each level fully redefines everything. Level 2 can flip every

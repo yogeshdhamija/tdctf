@@ -108,14 +108,15 @@ typedef struct {
     int    receptacle_x[2], receptacle_y[2];
 
     /* MVP additions */
-    int    selected_x, selected_y;          /* -1 if none */
-    int    placement_intent;                /* -1 or TowerType */
-    int    sim_tick;
-    int    sim_frame_accum;
-    int    sim_end_hold;
-    int    winner;                          /* -1 or PlayerID */
-    char   status_msg[96];
-    int    status_ttl;
+    int      selected_x, selected_y;          /* -1 if none */
+    int      placement_intent;                /* -1 or TowerType */
+    int      sim_tick;
+    int      sim_frame_accum;
+    int      sim_end_hold;
+    int      winner;                          /* -1 or PlayerID */
+    char     status_msg[96];
+    int      status_ttl;
+    uint32_t rng_state;                       /* xorshift32 PRNG; snapshotted */
 } GameState;
 
 /* Lifecycle */
@@ -193,11 +194,14 @@ int              game_pathing_next_step(const GameState *gs,
  *
  * Encoding format (single line, no whitespace):
  *   v1~T<turn>~P<phase>~R<res>:<inc>~r<upgs>~B<res>:<inc>~b<upgs>
- *      ~W<towers>~F<rx>:<ry>:<rhome>:<bx>:<by>:<bhome>
+ *      ~W<towers>~F<rx>:<ry>:<rhome>:<bx>:<by>:<bhome>~N<rng>
  * where:
  *   <phase>  one of R / B / S / O   (PLAN_RED / PLAN_BLUE / SIMULATE / GAME_OVER)
  *   <upgs>   comma-separated  <id>:<purchased>:<completed>:<turns_remaining>
  *   <towers> comma-separated  <R|B>:<id>:<x>:<y>:<level>:<hp>:<build_turns>
+ *   <rng>    decimal uint32 PRNG state — preserved so resumed sims reproduce
+ *            the same crit/random rolls as the original timeline. Omitted in
+ *            older snapshots; missing N leaves the fresh-init seed in place.
  */
 int              game_snapshot_encode(char *out, int out_size);
 int              game_snapshot_load(const char *src);

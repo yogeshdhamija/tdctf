@@ -268,6 +268,51 @@ static void test_simulate_phase_respawns_creeps(void) {
     CHECK(s->sim_tick == 0);
 }
 
+/* ── 5b. RNG state round-trips so resumed sims reproduce the same rolls ── */
+
+/* The xorshift32 PRNG that backs tower crit rolls lives in
+ * GameState.rng_state. Without snapshotting it, loading a mid-game snapshot
+ * would re-seed from scratch and any future rolls would diverge from the
+ * original timeline. The snapshot writes ~N<rng>, and load overwrites the
+ * freshly-init'd seed with it. */
+static void test_round_trip_preserves_rng_state(void) {
+    g_test = "round_trip_preserves_rng_state";
+    game_init_with_configs_and_map(TEST_TOWERS_CFG, TEST_CREEP_UPGRADES_CFG, TEST_MAP_CFG);
+
+    /* Force an arbitrary non-seed value — we want to confirm the round-trip
+     * carries an unusual value, not just the init default. The high bit is
+     * set so the signed-encoding edge (uint32 > INT_MAX) is exercised too. */
+    GameState *mut = (GameState *)game_get_state();
+    mut->rng_state = 0xDEADBEEFu;
+
+    char buf[4096];
+    CHECK(game_snapshot_encode(buf, sizeof(buf)) > 0);
+
+    /* Reset to the init seed, then reload — the snapshot must overwrite the
+     * fresh seed with the saved value. */
+    game_init_with_configs_and_map(TEST_TOWERS_CFG, TEST_CREEP_UPGRADES_CFG, TEST_MAP_CFG);
+    CHECK(game_get_state()->rng_state != 0xDEADBEEFu);  /* sanity: init reset it */
+    CHECK(game_snapshot_load(buf) == 0);
+    CHECK(game_get_state()->rng_state == 0xDEADBEEFu);
+}
+
+/* Older snapshots written before the N section existed must still load —
+ * the loader's default branch skips unknown sections, and the absence of N
+ * means the freshly-init'd seed stays in place (so resumed sims are
+ * deterministic from the init seed, just not from the original timeline). */
+static void test_legacy_snapshot_without_rng_loads(void) {
+    g_test = "legacy_snapshot_without_rng_loads";
+    game_init_with_configs_and_map(TEST_TOWERS_CFG, TEST_CREEP_UPGRADES_CFG, TEST_MAP_CFG);
+    uint32_t init_seed = game_get_state()->rng_state;
+
+    /* Minimal valid snapshot with no ~N section. */
+    const char *legacy =
+        "v1~T1~PR~R100:0~r~B100:0~b~W~F4:15:1:25:4:1";
+    CHECK(game_snapshot_load(legacy) == 0);
+    CHECK(game_get_state()->rng_state == init_seed);
+    CHECK(game_get_state()->turn == 1);
+}
+
 /* ── 6. Encoded form uses only URL-safe characters ────────────────────── */
 
 /* The encoded snapshot lives in a query param. Restricting it to RFC 3986
@@ -306,6 +351,8 @@ int main(void) {
     test_load_drops_unknown_tower_id();
     test_load_survives_upgrade_reorder();
     test_simulate_phase_respawns_creeps();
+    test_round_trip_preserves_rng_state();
+    test_legacy_snapshot_without_rng_loads();
     test_encoded_form_is_url_safe();
     printf("%d assertions, %d failures\n", g_assertions, g_fail);
     return g_fail ? 1 : 0;

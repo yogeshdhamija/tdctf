@@ -408,6 +408,46 @@ static void test_gunner_damages_creep(void) {
     CHECK(s->things[gid].last_target_x != 0 || s->things[gid].last_target_y != 0);
 }
 
+/* ── 11b. Crit replaces dmg on a successful roll ────────────────────── */
+
+/* CRITTER is configured crit_chance=100 + crit_dmg=999 against retriever
+ * hp=20 — every shot should one-shot the creep. A plain GUNNER at the same
+ * spot with dmg=10 needs 2 shots to kill, so the visible difference between
+ * "dmg" and "crit_dmg" is that the creep dies before the second tick. */
+static void test_tower_crit_uses_crit_dmg(void) {
+    g_test = "tower_crit_uses_crit_dmg";
+    game_init_with_configs_and_map(TEST_TOWERS_CFG, TEST_CREEP_UPGRADES_CFG, TEST_MAP_CFG);
+
+    game_set_placement(game_tower_id("CRITTER"));
+    game_grid_click(4, 14);
+    CHECK(tower_id_at(4, 14) >= 0);
+
+    game_lock_in();              /* → PLAN_BLUE */
+    game_buy_creep_upgrade(0);   /* BLUE +1 retriever, 1 turn research */
+    game_lock_in();              /* → SIMULATE turn 1 (no creeps) */
+    run_sim_to_completion();
+    enter_sim();                 /* SIMULATE turn 2 */
+
+    /* From spawn (29,10) the retriever walks west then south. ~32 ticks
+     * covers it reaching the kill zone around (4,14). The moment it enters
+     * range a single shot at 999 dmg must drop the 20-HP creep. */
+    int saw_kill_in_one_tick = 0;
+    int prev_hp = -1;
+    for (int i = 0; i < 35; i++) {
+        step_ticks(1);
+        const Thing *r = find_creep(PLAYER_BLUE, game_creep_type_id("RETRIEVER"));
+        if (!r) {
+            /* Creep gone. If it took damage before that, the previous-tick HP
+             * was > 0 and the only way it died was one >= 20 dmg hit — i.e. a
+             * crit. (A non-crit 1-dmg shot couldn't kill from any prev_hp.) */
+            if (prev_hp > 1) saw_kill_in_one_tick = 1;
+            break;
+        }
+        prev_hp = r->hp;
+    }
+    CHECK(saw_kill_in_one_tick);
+}
+
 /* ── 12. Slammer applies slow_ticks (AoE + slow effect) ──────────────── */
 
 static void test_slammer_slows_creep(void) {
@@ -677,6 +717,7 @@ int main(void) {
     test_completed_upgrade_spawns_retriever();
     test_resource_tower_income();
     test_gunner_damages_creep();
+    test_tower_crit_uses_crit_dmg();
     test_slammer_slows_creep();
     test_siege_attacks_tower();
     test_flag_pickup();
