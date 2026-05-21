@@ -4,3 +4,5 @@ build/*
 src/platform/emsdk/
 
 .vim/session.nvim
+
+.ai
