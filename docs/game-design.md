@@ -44,7 +44,13 @@ The flag is a dynamic piece of the map's ecosystem.
 
 Information about the enemy is limited. A player's vision only extends in a radius around their active creeps and towers: anything outside that radius is frozen in time to what the creeps last saw. If your creeps have never gotten to an area, it only shows the empty map (therefore starting flag/receptacle locations and default creep pathing is always visible). The enemy can see your tower placement only if their creeps or towers made it far enough to see them; once their creeps die or move on, their vision of your towers is frozen to that point in time. 
 
-During the build phase, you can see and inspect the corpses of the last round of creeps. You can see that an enemy is building/upgrading a tower by seeing the construction at that location, but you cannot see which tower/upgrade it is. More information may be available through specialized creep upgrades (e.g., dedicated scouting units which can determine towers and upgrades in progress).
+During the build phase, you can see and inspect the corpses of the last round of creeps but you can't see creep research in progress. You can see that an enemy is building a tower by seeing the construction at that location, but you cannot see which tower it is until it's completed. You can't see tower upgrades in progress (neither that the upgrade is occurring, nor what it is). More information may be available through specialized creep upgrades (e.g., dedicated scouting units which can determine towers upgrades in progress).
+
+
+- Most level 1 towers are instant-build (therefore visible), but weak to encourage bluffing (I built an electric tower, you better build rubber creeps!)
+- Tower upgrades cost more turns to research, but are invisible to enemy until completed (or scouted by specialty creeps)
+- Most level 1 creep upgrades are instant-build (therefore visible), but weak
+- Creep upgrades cost more turns to research, but are invisible to enemy until completed (and cannot be scouted)
 
 #### `7. Tech Trees: Creeps vs. Towers`
 
@@ -52,14 +58,16 @@ The game utilizes two distinct avenues of technological progression:
 
 * **Creep Skill Tree (Global):** A tree where the player makes choices which move them towards future options. Once the cost is paid, the research may take multiple turns to complete and “turn on”. Upgrades provide global buffs and spawn specialized creeps each turn. The contents of the research queue are hidden from the enemy, but players can inspect the attacking creeps (and their corpses from the last turn) to see what research was already finished by the last turn.  
 * **Tower Upgrade Tree (Local):** Individual to each tower. After the cost is paid, the tower may take multiple turns to upgrade, during which time it acts at its previous capacity. Upgrades provide localized damage and utility.
+ 
+Tower upgrades and creep upgrades are cancellable for a refund (refund can be unique per tower level and per creep upgrade). Also, refund can be different depending on how many turns of research have been completed. This is to allow pivoting strategies.
 
 #### `8. The Creep Ecosystem`
 
-Each creep upgrade either spawns additional creeps each turn, or enhances existing creeps. To maintain visual legibility, unit counts are kept deliberately small. A player's wave will begin with just 1 retriever creep and scale to a usual maximum of roughly 50 creeps in the late game. Examples of creep variations include:
+Each creep upgrade either spawns additional creeps each turn, or enhances existing creeps. To maintain visual legibility, unit counts are kept deliberately small: a usual maximum of roughly 50 creeps in the late game. Examples of creep variations include:
 
 * **Retriever Creeps:** The default units that attempt to run the maze, soak tower damage, and steal the flag.   
 * **Siege Creeps:** Units that attack enemy towers, damaging them and eventually destroying them.  
-* **Scout Creeps:** Specialized recon units that expand vision, and pierce the Fog of War to reveal details about enemy tower types and active research deeper in the maze. 
+* **Scout Creeps:** Specialized recon units that expand vision, and may even reveal tower upgrades in progress.
 
 Example of a creep upgrade path:
 
@@ -80,21 +88,13 @@ There is a variety (\~10) of base towers, each of which is unique and may intera
 
 Each tower has a small upgrade tree unique to that tower (three or four levels), and investment in the upgrade only upgrades that individual tower. The upgrade tree may have choices– making one choice lock the tower out of the other path.
 
-Towers may be destroyed during the planning phase, but the cost is not refunded.
-
 #### `10. Map Dynamics & Mazing`
 
-The game takes place on grid-based maps. Each player has three distinguished cells: a **spawn point** (where their creeps appear), an **enemy flag** (the objective they're trying to retrieve), and a **receptacle** (where the flag must be brought to score). Spawn and receptacle may be the same cell on some maps but are typically distinct.
+The game takes place on grid-based maps. Each player has three distinguished cells: a **spawn point** (where their creeps appear), an **enemy flag** (the objective they're trying to retrieve), and a **receptacle** (where the flag must be brought to score). 
 
-There is no demarcated path on the grid. Creeps simply take the shortest unblocked route from their spawn to the enemy flag, and once they've touched the flag, the shortest unblocked route to their own receptacle. Players may place towers anywhere their zone allows, provided both halves of every creep's journey — spawn → enemy flag and enemy flag → receptacle — remain reachable.
+Creeps take the shortest unblocked route from their spawn to the enemy flag, and once they've touched the flag, the shortest unblocked route to their own receptacle. Players may place towers anywhere their zone allows, provided both halves of every creep's journey — spawn → enemy flag and enemy flag → receptacle — remain reachable. When multiple shortest paths exist (i.e. there's a tie), creeps randomly choose to add an element of chance.
 
-When multiple shortest paths exist (i.e. the path has any non-axis-aligned displacement), creeps prefer the cell reached by moving **horizontally** as the next step.
-
-The flag is a goal only while it's at home or dropped — not while a teammate is carrying it. A creep that hasn't yet reached the flag, but for whom the flag is currently being carried, falls back to heading toward its own receptacle. This avoids non-carriers tail-chasing a teammate carrier. If the carrier later dies and the flag drops, non-carrier creeps in phase 1 revert to heading toward the new dropped-flag location.
-
-Picking up the flag is a side-effect of arriving on the flag's cell, not a pathing branch. Retriever creeps that step onto an at-home or dropped flag automatically pick it up; the path is unchanged.
-
-- Note: this may mean that creeps "know" information that hasn't been revealed to the player through the fog of war. (Example: at a fork in the opponent's maze, the creeps know that one path doesn't outlet to the flag but the other does)
+Note: this may mean that creeps "know" information that hasn't been revealed to the player through the fog of war. Example: at a fork in the opponent's maze, the creeps know that one path doesn't outlet to the flag but the other does.
 
 ##### Map Variety:
 
