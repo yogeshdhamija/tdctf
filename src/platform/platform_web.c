@@ -15,6 +15,11 @@ EM_JS(void, js_canvas_init, (int w, int h), {
     canvas.width = w;
     canvas.height = h;
     canvas.style.display = "block";
+    /* Size the viewport to the canvas so the whole thing fits horizontally on
+       any device by default; pinch-zoom remains available for zooming in/out. */
+    var viewport = document.getElementById("viewport");
+    if (viewport) viewport.setAttribute("content",
+        "width=" + w + ", initial-scale=1, user-scalable=yes");
     window._ctx = canvas.getContext("2d");
     canvas.addEventListener("mousedown", function(e) {
         var rect = canvas.getBoundingClientRect();
