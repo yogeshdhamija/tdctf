@@ -8,6 +8,14 @@
 static double last_time = 0.0;
 static double accumulator = 0.0;
 
+/* Snapshot I/O buffer. Sized generously: a full board with 100 towers and
+ * all 8 upgrades fits comfortably; 4 KB leaves headroom for the URL prefix
+ * the browser adds on top. JS writes the inbound snapshot into this buffer
+ * (via stringToUTF8) and reads the outbound one with UTF8ToString — one
+ * shared static page that game.c serializes into / out of. */
+#define SNAPSHOT_BUF_SIZE 4096
+static char g_snapshot_buf[SNAPSHOT_BUF_SIZE];
+
 /* ── JS interop: canvas 2D drawing ── */
 
 EM_JS(void, js_canvas_init, (int w, int h), {
@@ -113,6 +121,63 @@ void plat_draw_triangle(int x1, int y1, int x2, int y2, int x3, int y3, uint32_t
     js_draw_triangle(x1, y1, x2, y2, x3, y3, color);
 }
 
+/* ── Snapshot ↔ URL plumbing ── */
+
+/* The browser URL is the source of truth for "which snapshot is loaded".
+ * On every lock_in we encode the new state and pushState — so each click
+ * adds a history entry and back/forward navigates between snapshots.
+ * On initial load and on popstate we read ?s=… from the URL and load it
+ * (or fall back to a fresh game when the param is absent). */
+
+EM_JS(void, js_push_snapshot, (const char *snapshot), {
+    var s = UTF8ToString(snapshot);
+    var url = new URL(window.location);
+    url.searchParams.set("s", s);
+    history.pushState(null, "", url);
+});
+
+EM_JS(void, js_replace_snapshot, (const char *snapshot), {
+    var s = UTF8ToString(snapshot);
+    var url = new URL(window.location);
+    url.searchParams.set("s", s);
+    history.replaceState(null, "", url);
+});
+
+/* Reads ?s=… into the wasm buffer. Returns 1 if a snapshot was present,
+ * 0 if the URL had no `s` param. */
+EM_JS(int, js_read_url_snapshot, (char *buf, int buf_size), {
+    var url = new URL(window.location);
+    var s = url.searchParams.get("s");
+    if (s === null) return 0;
+    stringToUTF8(s, buf, buf_size);
+    return 1;
+});
+
+EM_JS(void, js_install_popstate, (), {
+    window.addEventListener("popstate", function(e) {
+        Module._on_popstate();
+    });
+});
+
+static void push_current_snapshot(void) {
+    int n = game_snapshot_encode(g_snapshot_buf, SNAPSHOT_BUF_SIZE);
+    if (n > 0) js_push_snapshot(g_snapshot_buf);
+}
+
+static void replace_current_snapshot(void) {
+    int n = game_snapshot_encode(g_snapshot_buf, SNAPSHOT_BUF_SIZE);
+    if (n > 0) js_replace_snapshot(g_snapshot_buf);
+}
+
+EMSCRIPTEN_KEEPALIVE
+void on_popstate(void) {
+    if (js_read_url_snapshot(g_snapshot_buf, SNAPSHOT_BUF_SIZE)) {
+        game_snapshot_load(g_snapshot_buf);
+    } else {
+        game_init();
+    }
+}
+
 /* ── Input ── */
 
 EMSCRIPTEN_KEEPALIVE
@@ -134,10 +199,10 @@ void on_click(int px, int py) {
         return;
     }
     switch (btn) {
-        case BTN_LOCK_IN:         game_lock_in();                       break;
-        case BTN_UPGRADE_TOWER:   game_upgrade_selected();              break;
-        case BTN_DESTROY_TOWER:   game_destroy_selected();              break;
-        case BTN_RESTART:         game_init();                          break;
+        case BTN_LOCK_IN:         game_lock_in();          push_current_snapshot(); break;
+        case BTN_UPGRADE_TOWER:   game_upgrade_selected();                          break;
+        case BTN_DESTROY_TOWER:   game_destroy_selected();                          break;
+        case BTN_RESTART:         game_init();             push_current_snapshot(); break;
         default: break;
     }
 }
@@ -212,11 +277,23 @@ static void frame(void) {
 
 int main(void) {
     game_init();
+    /* If the URL we were opened with carries a snapshot, restore it now —
+     * before the canvas is sized — so the rest of init sees the snapshot's
+     * grid dimensions. (Today the map is fixed, but the snapshot may have
+     * been authored against a different map.cfg; reading the URL first
+     * keeps that future-safe.) */
+    if (js_read_url_snapshot(g_snapshot_buf, SNAPSHOT_BUF_SIZE)) {
+        game_snapshot_load(g_snapshot_buf);
+    }
     const GameState *gs = game_get_state();
     int canvas_w = CELL_SIZE * gs->grid_w + SIDEBAR_W;
     int canvas_h = CELL_SIZE * gs->grid_h;
     last_time = emscripten_get_now();
     js_canvas_init(canvas_w, canvas_h);
+    js_install_popstate();
+    /* Anchor the URL to the current state so back/forward has somewhere
+     * to land even before the user's first Lock In. */
+    replace_current_snapshot();
     emscripten_set_main_loop(frame, 0, 1);
     return 0;
 }

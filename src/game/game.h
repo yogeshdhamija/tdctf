@@ -174,4 +174,32 @@ int              game_pathing_next_step(const GameState *gs,
                                         PlayerID owner, int visited_flag,
                                         int *out_x, int *out_y);
 
+/* Snapshot save/resume.
+ *
+ * The encoded string is a URL-safe, plain-text representation of enough
+ * game state to resume play: turn, phase, per-player resources/income, all
+ * purchased creep upgrades (referenced by config ID), live towers
+ * (referenced by config ID), and both flags' positions. It deliberately
+ * omits anything derivable from the configs (tower stats, creep spawn
+ * counts) and anything transient (creeps mid-sim, sim_tick, beam/cooldown,
+ * UI selection state).
+ *
+ * Loading silently drops references that don't resolve against the current
+ * catalogs (renamed/removed tower or upgrade IDs) or positions that no
+ * longer fit the current map (out of bounds, in debris). This is the
+ * "configs may have changed in a non-conflicting way" property — the
+ * snapshot keeps working when the cfgs are edited, as long as the IDs
+ * still exist and the map still has the cells.
+ *
+ * Encoding format (single line, no whitespace):
+ *   v1~T<turn>~P<phase>~R<res>:<inc>~r<upgs>~B<res>:<inc>~b<upgs>
+ *      ~W<towers>~F<rx>:<ry>:<rhome>:<bx>:<by>:<bhome>
+ * where:
+ *   <phase>  one of R / B / S / O   (PLAN_RED / PLAN_BLUE / SIMULATE / GAME_OVER)
+ *   <upgs>   comma-separated  <id>:<purchased>:<completed>:<turns_remaining>
+ *   <towers> comma-separated  <R|B>:<id>:<x>:<y>:<level>:<hp>:<build_turns>
+ */
+int              game_snapshot_encode(char *out, int out_size);
+int              game_snapshot_load(const char *src);
+
 #endif

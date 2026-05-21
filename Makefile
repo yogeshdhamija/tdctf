@@ -19,7 +19,7 @@ MAP_CONFIG_HDR   := build/map_config_data.h
 INCLUDES := -Isrc -Ibuild
 
 EMFLAGS := -O2 -s WASM=1 -s SINGLE_FILE=1 --shell-file $(SHELL_HTML) \
-           -s EXPORTED_RUNTIME_METHODS=UTF8ToString
+           -s EXPORTED_RUNTIME_METHODS=UTF8ToString,stringToUTF8
 
 TEST_PATHING_BIN := build/test_pathing
 TEST_PATHING_SRCS := tests/test_pathing.c $(GAME_SRCS)
@@ -33,18 +33,21 @@ TEST_CREEP_CONFIG_BIN := build/test_creep_config
 TEST_CREEP_CONFIG_SRCS := tests/test_creep_config.c src/game/creep_config.c
 TEST_MAP_CONFIG_BIN := build/test_map_config
 TEST_MAP_CONFIG_SRCS := tests/test_map_config.c src/game/map_config.c
+TEST_SNAPSHOT_BIN := build/test_snapshot
+TEST_SNAPSHOT_SRCS := tests/test_snapshot.c $(GAME_SRCS)
 
 .PHONY: all clean setup test
 
 all: $(OUT)
 
-test: $(TEST_PATHING_BIN) $(TEST_GAME_BIN) $(TEST_RENDER_BIN) $(TEST_TOWER_CONFIG_BIN) $(TEST_CREEP_CONFIG_BIN) $(TEST_MAP_CONFIG_BIN)
+test: $(TEST_PATHING_BIN) $(TEST_GAME_BIN) $(TEST_RENDER_BIN) $(TEST_TOWER_CONFIG_BIN) $(TEST_CREEP_CONFIG_BIN) $(TEST_MAP_CONFIG_BIN) $(TEST_SNAPSHOT_BIN)
 	$(TEST_PATHING_BIN)
 	$(TEST_GAME_BIN)
 	$(TEST_RENDER_BIN)
 	$(TEST_TOWER_CONFIG_BIN)
 	$(TEST_CREEP_CONFIG_BIN)
 	$(TEST_MAP_CONFIG_BIN)
+	$(TEST_SNAPSHOT_BIN)
 
 $(TOWER_CONFIG_HDR): $(TOWER_CONFIG_SRC) | build
 	@echo 'Generating $@'
@@ -99,6 +102,9 @@ $(TEST_CREEP_CONFIG_BIN): $(TEST_CREEP_CONFIG_SRCS) $(CREEP_CONFIG_HDR) src/game
 
 $(TEST_MAP_CONFIG_BIN): $(TEST_MAP_CONFIG_SRCS) $(MAP_CONFIG_HDR) src/game/map_config.h | build
 	cc -O0 -g -Wall -Wextra $(INCLUDES) $(TEST_MAP_CONFIG_SRCS) -o $(TEST_MAP_CONFIG_BIN)
+
+$(TEST_SNAPSHOT_BIN): $(TEST_SNAPSHOT_SRCS) $(TOWER_CONFIG_HDR) $(CREEP_CONFIG_HDR) $(MAP_CONFIG_HDR) src/game/game.h src/game/tower_config.h src/game/creep_config.h src/game/map_config.h tests/test_fixtures.h | build
+	cc -O0 -g -Wall -Wextra $(INCLUDES) -Itests $(TEST_SNAPSHOT_SRCS) -o $(TEST_SNAPSHOT_BIN)
 
 $(OUT): $(SRCS) $(TOWER_CONFIG_HDR) $(CREEP_CONFIG_HDR) $(MAP_CONFIG_HDR) $(SHELL_HTML) | build
 	source $(EMSDK_ENV) > /dev/null 2>&1 && emcc $(SRCS) -o $(OUT) $(EMFLAGS) $(INCLUDES)

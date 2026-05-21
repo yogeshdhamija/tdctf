@@ -677,3 +677,261 @@ void game_frame(void) {
     if (s.sim_tick >= SIM_TICKS_PER_TURN || !any_creeps_alive())
         s.sim_end_hold = 3 * SIM_FRAMES_PER_TICK;
 }
+
+/* ── Snapshot encode / decode ───────────────────────────── */
+
+/* See header for the format. Designed to round-trip GameState through a
+ * URL query param. Tower / upgrade references use string IDs from the
+ * catalogs (so config edits that don't rename/remove anything keep working);
+ * tower stats and creep spawn counts are intentionally omitted because they
+ * come straight from the current catalogs at load time. */
+
+static char phase_to_char(Phase p) {
+    switch (p) {
+        case PHASE_PLAN_RED:  return 'R';
+        case PHASE_PLAN_BLUE: return 'B';
+        case PHASE_SIMULATE:  return 'S';
+        case PHASE_GAME_OVER: return 'O';
+    }
+    return 'R';
+}
+
+static Phase phase_from_char(char c) {
+    switch (c) {
+        case 'B': return PHASE_PLAN_BLUE;
+        case 'S': return PHASE_SIMULATE;
+        case 'O': return PHASE_GAME_OVER;
+        default:  return PHASE_PLAN_RED;
+    }
+}
+
+/* APPEND macro: write fmt+args to (p..end). Returns -1 from the enclosing
+ * function on overflow. Used by game_snapshot_encode below to keep the
+ * "bounded write or bail" pattern from cluttering each snprintf site. */
+#define APPEND(...) do {                                                  \
+    int _n = snprintf(p, (size_t)(end - p), __VA_ARGS__);                 \
+    if (_n < 0 || _n >= end - p) return -1;                               \
+    p += _n;                                                              \
+} while (0)
+
+int game_snapshot_encode(char *out, int out_size) {
+    if (!out || out_size <= 0) return -1;
+    char *p = out;
+    char *end = out + out_size;
+
+    APPEND("v1~T%d~P%c", s.turn, phase_to_char(s.phase));
+
+    for (int pi = 0; pi < 2; pi++) {
+        APPEND("~%c%d:%d~%c",
+               pi == PLAYER_RED ? 'R' : 'B',
+               s.players[pi].resources,
+               s.players[pi].income_per_turn,
+               pi == PLAYER_RED ? 'r' : 'b');
+        int first = 1;
+        for (int i = 0; i < s.players[pi].creep_upgrade_count; i++) {
+            const CreepUpgrade *u = &s.players[pi].creep_upgrades[i];
+            if (!u->purchased) continue;   /* default state: omit to save bytes */
+            const char *id = creep_config_get()->upgrades[i].id;
+            APPEND("%s%s:%d:%d:%d",
+                   first ? "" : ",", id,
+                   u->purchased, u->completed, u->turns_remaining);
+            first = 0;
+        }
+    }
+
+    APPEND("~W");
+    int first = 1;
+    for (int i = 0; i < s.thing_count; i++) {
+        const Thing *t = &s.things[i];
+        if (t->tag != THING_TOWER || !t->alive) continue;
+        const char *id = tower_config_get()->towers[t->tower.type].id;
+        APPEND("%s%c:%s:%d:%d:%d:%d:%d",
+               first ? "" : ",",
+               t->owner == PLAYER_RED ? 'R' : 'B',
+               id, t->x, t->y, t->tower.level, t->hp, t->tower.build_turns);
+        first = 0;
+    }
+
+    APPEND("~F%d:%d:%d:%d:%d:%d",
+           s.flags[PLAYER_RED].x, s.flags[PLAYER_RED].y, s.flags[PLAYER_RED].at_home,
+           s.flags[PLAYER_BLUE].x, s.flags[PLAYER_BLUE].y, s.flags[PLAYER_BLUE].at_home);
+
+    return (int)(p - out);
+}
+
+#undef APPEND
+
+static const char *read_int(const char *src, int *out) {
+    int neg = 0;
+    if (*src == '-') { neg = 1; src++; }
+    int v = 0;
+    while (*src >= '0' && *src <= '9') { v = v * 10 + (*src - '0'); src++; }
+    *out = neg ? -v : v;
+    return src;
+}
+
+static const char *read_id(const char *src, char *buf, int buf_size) {
+    int i = 0;
+    while (*src && *src != ':' && *src != ',' && *src != '~') {
+        if (i < buf_size - 1) buf[i++] = *src;
+        src++;
+    }
+    buf[i] = 0;
+    return src;
+}
+
+/* Skip to the next record (after ',') or end of section ('~'). */
+static const char *skip_record(const char *src) {
+    while (*src && *src != ',' && *src != '~') src++;
+    if (*src == ',') src++;
+    return src;
+}
+
+static const char *parse_upgrades(const char *src, PlayerID owner) {
+    while (*src && *src != '~') {
+        char id[CREEP_UPGRADE_ID_MAX];
+        src = read_id(src, id, sizeof(id));
+        if (*src != ':') { src = skip_record(src); continue; }
+        src++;
+        int purchased, completed, turns;
+        src = read_int(src, &purchased); if (*src == ':') src++;
+        src = read_int(src, &completed); if (*src == ':') src++;
+        src = read_int(src, &turns);
+        int idx = creep_config_lookup_upgrade(id);
+        if (idx >= 0 && idx < s.players[owner].creep_upgrade_count) {
+            CreepUpgrade *u = &s.players[owner].creep_upgrades[idx];
+            u->purchased       = purchased;
+            u->completed       = completed;
+            u->turns_remaining = turns;
+        }
+        if (*src == ',') src++;
+    }
+    return src;
+}
+
+static void place_snapshot_tower(PlayerID owner, const char *id,
+                                 int x, int y, int level, int hp, int bt) {
+    TowerType type = tower_config_lookup(id);
+    if (type < 0) return;                                /* unknown id from older cfg */
+    if (x < 0 || y < 0 || x >= s.grid_w || y >= s.grid_h) return;
+    if (s.grid[x][y].zone == ZONE_DEBRIS) return;        /* map shrunk into us */
+    if (s.grid[x][y].thing_id != -1) return;             /* slot taken */
+    int max_lvl = spec(type)->level_count;
+    if (level < 1) level = 1;
+    if (level > max_lvl) level = max_lvl;
+    if (bt < 0) bt = 0;
+    int idx = alloc_thing();
+    if (idx < 0) return;
+    Thing *t = &s.things[idx];
+    memset(t, 0, sizeof(*t));
+    t->tag         = THING_TOWER;
+    t->owner       = owner;
+    t->x = x; t->y = y;
+    t->max_hp      = spec(type)->level[level - 1].hp;
+    t->hp          = (hp > 0 && hp <= t->max_hp) ? hp : t->max_hp;
+    t->alive       = 1;
+    t->tower.type  = type;
+    t->tower.level = level;
+    t->tower.build_turns = bt;
+    s.grid[x][y].thing_id = idx;
+}
+
+static const char *parse_towers(const char *src) {
+    while (*src && *src != '~') {
+        char owner_c = *src;
+        if (owner_c != 'R' && owner_c != 'B') { src = skip_record(src); continue; }
+        src++;
+        if (*src != ':') { src = skip_record(src); continue; }
+        src++;
+        char id[TOWER_ID_MAX];
+        src = read_id(src, id, sizeof(id));
+        if (*src != ':') { src = skip_record(src); continue; }
+        src++;
+        int x, y, level, hp, bt;
+        src = read_int(src, &x);      if (*src == ':') src++;
+        src = read_int(src, &y);      if (*src == ':') src++;
+        src = read_int(src, &level);  if (*src == ':') src++;
+        src = read_int(src, &hp);     if (*src == ':') src++;
+        src = read_int(src, &bt);
+        place_snapshot_tower(owner_c == 'R' ? PLAYER_RED : PLAYER_BLUE,
+                             id, x, y, level, hp, bt);
+        if (*src == ',') src++;
+    }
+    return src;
+}
+
+static const char *parse_flags(const char *src) {
+    int v[6] = {0};
+    for (int i = 0; i < 6; i++) {
+        src = read_int(src, &v[i]);
+        if (*src == ':') src++;
+    }
+    int coords[2][2] = { { v[0], v[1] }, { v[3], v[4] } };
+    int homes[2]    = { v[2], v[5] };
+    for (int p = 0; p < 2; p++) {
+        int x = coords[p][0], y = coords[p][1];
+        if (x < 0 || y < 0 || x >= s.grid_w || y >= s.grid_h) continue;
+        s.flags[p].x          = x;
+        s.flags[p].y          = y;
+        s.flags[p].at_home    = homes[p] ? 1 : 0;
+        s.flags[p].carried_by = -1;
+    }
+    return src;
+}
+
+int game_snapshot_load(const char *src) {
+    if (!src) return -1;
+    /* Reset everything via the existing zero-state init, which seeds defaults
+     * from the *current* catalogs (towers, creep upgrades, map). The
+     * snapshot then overlays whatever it wants on top of that fresh state. */
+    game_init_state();
+
+    if (src[0] != 'v' || src[1] != '1') return -1;
+    src += 2;
+
+    while (*src == '~') {
+        src++;
+        char tag = *src++;
+        if (!tag) return -1;
+        switch (tag) {
+            case 'T': {
+                int v; src = read_int(src, &v);
+                if (v < 1) v = 1;
+                s.turn = v;
+                break;
+            }
+            case 'P': {
+                s.phase = phase_from_char(*src);
+                if (*src) src++;
+                break;
+            }
+            case 'R': case 'B': {
+                PlayerID owner = (tag == 'R') ? PLAYER_RED : PLAYER_BLUE;
+                int res, inc;
+                src = read_int(src, &res); if (*src == ':') src++;
+                src = read_int(src, &inc);
+                s.players[owner].resources       = res;
+                s.players[owner].income_per_turn = inc;
+                break;
+            }
+            case 'r': src = parse_upgrades(src, PLAYER_RED);  break;
+            case 'b': src = parse_upgrades(src, PLAYER_BLUE); break;
+            case 'W': src = parse_towers(src);                break;
+            case 'F': src = parse_flags(src);                 break;
+            default:
+                /* Unknown section: skip to next ~ so future format
+                 * extensions don't break old clients. */
+                while (*src && *src != '~') src++;
+                break;
+        }
+    }
+
+    /* If the snapshot says we're in SIMULATE, the recorded state is the
+     * "just after start_simulation" point — towers reset, creeps about to
+     * spawn. We didn't save creeps (they're deterministic), so re-derive
+     * them here. start_simulation also zeroes sim_tick / beam_ttl / cooldown
+     * which matches the snapshot's implicit "fresh sim" semantics. */
+    if (s.phase == PHASE_SIMULATE) start_simulation();
+
+    return 0;
+}
