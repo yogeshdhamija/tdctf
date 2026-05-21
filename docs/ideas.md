@@ -1,1 +1,0 @@
-- Add possible "critical hit chance" and "critical hit damage" features to towers (to happen instead of the usual damage) to add an element of chance
