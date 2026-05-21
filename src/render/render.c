@@ -333,7 +333,7 @@ void render_frame(const GameState *gs) {
 
     if (gs->status_ttl > 0 && gs->status_msg[0]) {
         plat_fill_rect(sx + 4, gh - 22, SIDEBAR_W - 8, 18, 0x402810);
-        plat_draw_text(sx + 10, gh - 20, gs->status_msg, 0xFFCC66);
+        plat_draw_text(sx + 10, gh - 50, gs->status_msg, 0xFFCC66);
     }
 
     /* Frame stats overlay */
