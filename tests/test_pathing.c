@@ -96,23 +96,69 @@ static void test_goal_switches_on_visited_flag(void) {
     CHECK(nx == 6 && ny == 0);
 }
 
-/* When two cells are tied for the shortest distance to the goal, BFS
- * prefers the horizontal one as the first step. */
-static void test_horizontal_tiebreak(void) {
-    g_test = "horizontal_tiebreak";
+/* "Pathing wobble" per docs/game-design.md §10: when multiple shortest paths
+ * exist the creep picks uniformly at random among them. Driven by
+ * gs->rng_state — same RNG state means the same pick, so this is observable
+ * from outside. We construct a spawn/flag pair with two tied first steps
+ * (horizontal and vertical) and walk the RNG forward across many calls; both
+ * choices must appear, otherwise the random tiebreak is broken. */
+static void test_wobble_picks_among_ties(void) {
+    g_test = "wobble_picks_among_ties";
     GameState gs;
-    /* Spawn (0,0), flag (5,5). Manhattan distance 10; many shortest paths.
-     * Horizontal-first means the first step is (1,0), not (0,1). */
+    /* Spawn (0,0), flag (5,5). Manhattan distance 10; from (0,0) the two
+     * shortest-path neighbours are (1,0) and (0,1). */
     minimal_state(&gs, 10, 10, 0, 0, 5, 5, 9, 9);
+    /* xorshift32 is a fixed point at 0 — without a real seed every "random"
+     * pick would be index 0 and the test would silently pass on broken code. */
+    gs.rng_state = 0x12345678u;
 
+    int saw_h = 0, saw_v = 0;
+    for (int i = 0; i < 64 && !(saw_h && saw_v); i++) {
+        int nx, ny;
+        CHECK(game_pathing_next_step(&gs, 0, 0, PLAYER_RED, 0, &nx, &ny));
+        if (nx == 1 && ny == 0) saw_h = 1;
+        if (nx == 0 && ny == 1) saw_v = 1;
+        /* No other first step can be shortest — guard against drift. */
+        CHECK((nx == 1 && ny == 0) || (nx == 0 && ny == 1));
+    }
+    CHECK(saw_h);
+    CHECK(saw_v);
+}
+
+/* Wobble is RNG-driven, so the same RNG state must always produce the same
+ * pick. This is what makes snapshot resumption reproduce the exact same
+ * timeline (the snapshot round-trips rng_state). */
+static void test_wobble_is_deterministic_per_rng_state(void) {
+    g_test = "wobble_is_deterministic_per_rng_state";
+    GameState a, b;
+    minimal_state(&a, 10, 10, 0, 0, 5, 5, 9, 9);
+    minimal_state(&b, 10, 10, 0, 0, 5, 5, 9, 9);
+    a.rng_state = b.rng_state = 0xC0FFEEu;
+
+    for (int i = 0; i < 16; i++) {
+        int ax, ay, bx, by;
+        CHECK(game_pathing_next_step(&a, 0, 0, PLAYER_RED, 0, &ax, &ay));
+        CHECK(game_pathing_next_step(&b, 0, 0, PLAYER_RED, 0, &bx, &by));
+        CHECK(ax == bx && ay == by);
+    }
+}
+
+/* When only one neighbour is on a shortest path, the result is deterministic
+ * and no RNG is consumed — important so that paths_valid (which doesn't pass
+ * a step buffer) and trivially-routed creeps don't burn entropy that the
+ * crit rolls depend on for their timeline. */
+static void test_single_shortest_step_does_not_consume_rng(void) {
+    g_test = "single_shortest_step_does_not_consume_rng";
+    GameState gs;
+    /* Spawn (0,0), flag (5,0) on the same row: only (1,0) is one step
+     * closer to the goal. */
+    minimal_state(&gs, 10, 10, 0, 0, 5, 0, 9, 0);
+    gs.rng_state = 0xDEADBEEFu;
+    uint32_t before = gs.rng_state;
     int nx, ny;
     CHECK(game_pathing_next_step(&gs, 0, 0, PLAYER_RED, 0, &nx, &ny));
     CHECK(nx == 1 && ny == 0);
-
-    /* From (0,5) heading to flag (5,0): horizontal step toward x=5 is
-     * also tied with the vertical step toward y=0. Horizontal wins. */
-    CHECK(game_pathing_next_step(&gs, 0, 5, PLAYER_RED, 0, &nx, &ny));
-    CHECK(nx == 1 && ny == 5);
+    CHECK(gs.rng_state == before);
 }
 
 /* A blocked cell forces BFS to reroute through walkable cells. The first
@@ -144,10 +190,11 @@ static void test_carried_flag_is_not_a_goal(void) {
     gs.flags[PLAYER_BLUE].carried_by = 7;   /* in-flight on some other creep */
 
     int nx, ny;
-    /* Creep at (1,0), visited_flag = 0. Flag is carried, so goal degenerates
-     * to receptacle (9,9). From (1,0), horizontal-first step is (2,0). */
+    /* Creep at (1,0), visited_flag = 0. Flag is carried, so the goal
+     * degenerates to receptacle (9,9). From (1,0), wobble picks one of the
+     * two shortest first steps — (2,0) east, (1,1) south — uniformly. */
     CHECK(game_pathing_next_step(&gs, 1, 0, PLAYER_RED, 0, &nx, &ny));
-    CHECK(nx == 2 && ny == 0);
+    CHECK((nx == 2 && ny == 0) || (nx == 1 && ny == 1));
 }
 
 /* The flag's current cell is the goal regardless of whether it's at home or
@@ -162,11 +209,11 @@ static void test_dropped_flag_is_a_goal(void) {
     gs.flags[PLAYER_BLUE].carried_by = -1;
 
     int nx, ny;
-    /* Creep at (1,0). Goal moved to (0,2). Manhattan 3. BFS picks shortest:
-     * horizontal-first means (0,0) is the first step (one of the two tied
-     * 3-step paths goes (1,0)→(0,0)→(0,1)→(0,2)). */
+    /* Creep at (1,0). Goal moved to (0,2). Two tied shortest first steps:
+     * (0,0) [via (1,0)→(0,0)→(0,1)→(0,2)] and (1,1) [via (1,0)→(1,1)→(0,1)
+     * →(0,2)]. Either is a valid wobble pick. */
     CHECK(game_pathing_next_step(&gs, 1, 0, PLAYER_RED, 0, &nx, &ny));
-    CHECK(nx == 0 && ny == 0);
+    CHECK((nx == 0 && ny == 0) || (nx == 1 && ny == 1));
 }
 
 /* ── main ────────────────────────────────────────────────────────────── */
@@ -174,7 +221,9 @@ static void test_dropped_flag_is_a_goal(void) {
 int main(void) {
     test_retriever_walks_full_loop_and_wins();
     test_goal_switches_on_visited_flag();
-    test_horizontal_tiebreak();
+    test_wobble_picks_among_ties();
+    test_wobble_is_deterministic_per_rng_state();
+    test_single_shortest_step_does_not_consume_rng();
     test_detour_around_obstacle();
     test_carried_flag_is_not_a_goal();
     test_dropped_flag_is_a_goal();

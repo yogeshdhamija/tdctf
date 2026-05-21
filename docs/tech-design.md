@@ -115,7 +115,7 @@ Live footprint (game running, default map):
 | Static global               | Where               | Size    |
 |----------------------------|---------------------|---------|
 | `GameState s`               | `game.c`            | ~31.7 KB (Thing[400] = 22.4 KB; Cell[40×30] = 9.4 KB) |
-| BFS scratch (`bfs_parent` + `bfs_qx/qy`) | `game.c` | ~14.4 KB |
+| BFS scratch (`bfs_dist` + `bfs_qx/qy`) | `game.c` | ~14.4 KB |
 | `TowerCatalog g_catalog`    | `tower_config.c`    | ~5.1 KB |
 | `g_frame_deltas[360]`       | `platform_web.c`    | ~2.8 KB |
 | `g_btns[64]`                | `render.c`          | ~1.3 KB |

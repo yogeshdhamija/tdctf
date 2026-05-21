@@ -10,14 +10,18 @@ static GameState s;
 /* Deterministic xorshift32 PRNG. Seeded to a fixed value by game_init_state
  * so identical play sequences produce identical sim outcomes, and the state
  * lives in GameState.rng_state so the snapshot round-trips it — resuming
- * from a mid-game snapshot reproduces the same future rolls. Used today
- * only by the tower crit roll; add new consumers here. */
-static uint32_t rng_next(void) {
-    uint32_t x = s.rng_state;
+ * from a mid-game snapshot reproduces the same future rolls. Consumers:
+ * tower crit rolls and the pathing wobble (random tiebreak among equal
+ * shortest paths). State is taken by pointer so callers — including the
+ * pathing code, which threads &gs->rng_state through — can use it without
+ * the function reaching back into the file-static GameState. Note the zero
+ * seed is a fixed point; seed to non-zero for actual randomness. */
+static uint32_t rng_next(uint32_t *state) {
+    uint32_t x = *state;
     x ^= x << 13;
     x ^= x >> 17;
     x ^= x << 5;
-    s.rng_state = x;
+    *state = x;
     return x;
 }
 
@@ -123,15 +127,24 @@ static void set_status(const char *msg) {
  * unblocked path spawn → enemy flag → own receptacle. Phase 1 (visited_flag
  * == 0): the goal is the enemy flag's current cell. Phase 2 (visited_flag
  * == 1, set as soon as the creep steps onto the flag's current cell): the
- * goal is the creep's own receptacle. The neighbour expansion order in BFS
- * is horizontal-first (+x, -x, +y, -y), so when two cells tie for the
- * shortest distance to the goal, BFS returns the horizontal one as the
- * first step. */
-static int     bfs_parent[MAX_GRID_W][MAX_GRID_H];
+ * goal is the creep's own receptacle.
+ *
+ * BFS runs goal→source, populating a distance field. The source's distance
+ * is the length of the shortest path; any walkable neighbour of the source
+ * whose distance is exactly one less is the start of *a* shortest path.
+ * When multiple such neighbours exist (a tie), we pick uniformly at random
+ * via gs->rng_state — this is the "pathing wobble" from game-design.md §10,
+ * adding an element of chance to which path a creep takes. The pick is
+ * deterministic given the RNG state and so survives snapshots. */
+static int     bfs_dist[MAX_GRID_W][MAX_GRID_H];   /* stored as distance + 1 so 0 means unvisited */
 static int     bfs_qx[MAX_GRID_W * MAX_GRID_H];
 static int     bfs_qy[MAX_GRID_W * MAX_GRID_H];
 
-static int bfs_to_goal(const GameState *gs, int sx, int sy, int gx, int gy,
+/* gs is not const: when step_x is set and multiple shortest-path neighbours
+ * tie, we consume one rng_next from gs->rng_state. With step_x == NULL
+ * (paths_valid uses this) we only answer reachability and never touch the
+ * RNG. */
+static int bfs_to_goal(GameState *gs, int sx, int sy, int gx, int gy,
                        int *step_x, int *step_y) {
     if (sx < 0 || sy < 0 || sx >= gs->grid_w || sy >= gs->grid_h) return 0;
     if (sx == gx && sy == gy) {
@@ -141,46 +154,44 @@ static int bfs_to_goal(const GameState *gs, int sx, int sy, int gx, int gy,
     int W = gs->grid_w, H = gs->grid_h;
     for (int x = 0; x < W; x++)
         for (int y = 0; y < H; y++)
-            bfs_parent[x][y] = 0;
+            bfs_dist[x][y] = 0;
     int qh = 0, qt = 0;
-    bfs_qx[qt] = sx; bfs_qy[qt] = sy; qt++;
-    bfs_parent[sx][sy] = sy * W + sx + 1;
-    /* Horizontal-first: cells tied for shortest distance from source are
-     * discovered via +x / -x before +y / -y, so the returned first step
-     * prefers horizontal movement on a tie. */
+    bfs_qx[qt] = gx; bfs_qy[qt] = gy; qt++;
+    bfs_dist[gx][gy] = 1;          /* distance 0, +1 sentinel */
     static const int DX[4] = { 1, -1, 0,  0 };
     static const int DY[4] = { 0,  0, 1, -1 };
     while (qh < qt) {
         int cx = bfs_qx[qh], cy = bfs_qy[qh]; qh++;
+        /* Stop expanding once the source has been popped — all source
+         * neighbours at distance source_d-1 are already discovered by FIFO
+         * layering, which is everything the tie-pick below needs. */
+        if (cx == sx && cy == sy) break;
         for (int i = 0; i < 4; i++) {
             int nx = cx + DX[i], ny = cy + DY[i];
             if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
-            if (bfs_parent[nx][ny]) continue;
-            /* The goal cell itself is reachable even if "blocked" — a creep
-             * walking toward a tower-occupied target would otherwise be
-             * stuck. But this only matters at placement time: paths_valid
-             * uses bfs_to_goal with goals that aren't blocked. */
+            if (bfs_dist[nx][ny]) continue;
             if (!walkable_in(gs, nx, ny)) continue;
-            bfs_parent[nx][ny] = cy * W + cx + 1;
-            if (nx == gx && ny == gy) {
-                int rx = nx, ry = ny;
-                while (1) {
-                    int p  = bfs_parent[rx][ry] - 1;
-                    int px = p % W, py = p / W;
-                    if (px == sx && py == sy) {
-                        if (step_x) { *step_x = rx; *step_y = ry; }
-                        return 1;
-                    }
-                    rx = px; ry = py;
-                }
-            }
+            bfs_dist[nx][ny] = bfs_dist[cx][cy] + 1;
             bfs_qx[qt] = nx; bfs_qy[qt] = ny; qt++;
         }
     }
-    return 0;
+    if (!bfs_dist[sx][sy]) return 0;
+    if (!step_x) return 1;
+    int target_d = bfs_dist[sx][sy] - 1;
+    int cand_x[4], cand_y[4], n = 0;
+    for (int i = 0; i < 4; i++) {
+        int nx = sx + DX[i], ny = sy + DY[i];
+        if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+        if (bfs_dist[nx][ny] != target_d) continue;
+        cand_x[n] = nx; cand_y[n] = ny; n++;
+    }
+    if (n == 0) return 0;
+    int pick = (n == 1) ? 0 : (int)(rng_next(&gs->rng_state) % (uint32_t)n);
+    *step_x = cand_x[pick]; *step_y = cand_y[pick];
+    return 1;
 }
 
-int game_pathing_next_step(const GameState *gs, int creep_x, int creep_y,
+int game_pathing_next_step(GameState *gs, int creep_x, int creep_y,
                            PlayerID owner, int visited_flag,
                            int *out_x, int *out_y) {
     int gx, gy;
@@ -564,7 +575,7 @@ static void sim_one_tick(void) {
          * cell in the splash — the design is "crit replaces dmg", not "each
          * target rolls independently". */
         int dmg = atk->dmg;
-        if (atk->crit_chance > 0 && (rng_next() % 100u) < (uint32_t)atk->crit_chance)
+        if (atk->crit_chance > 0 && (rng_next(&s.rng_state) % 100u) < (uint32_t)atk->crit_chance)
             dmg = atk->crit_dmg;
         if (atk->aoe > 0) {
             for (int j = 0; j < s.thing_count; j++) {

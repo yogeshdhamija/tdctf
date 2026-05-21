@@ -167,10 +167,12 @@ PlayerID         game_planning_player(void);                /* meaningful only i
 /* Pathing primitive exposed for testing at the layer of abstraction of the
  * pathing logic itself (not the full sim). Per docs/game-design.md §10:
  * each creep takes the shortest unblocked path to the enemy flag's current
- * cell (until it touches the flag), then to its own receptacle. BFS expands
- * horizontal neighbours before vertical, so on a tie the first step is the
- * horizontal one. */
-int              game_pathing_next_step(const GameState *gs,
+ * cell (until it touches the flag), then to its own receptacle. When
+ * multiple shortest paths exist, the first step is chosen uniformly at
+ * random among them ("pathing wobble"), consuming one xorshift32 roll from
+ * gs->rng_state. With only one shortest first step (or none), no RNG is
+ * consumed. gs is non-const because of that side effect. */
+int              game_pathing_next_step(GameState *gs,
                                         int creep_x, int creep_y,
                                         PlayerID owner, int visited_flag,
                                         int *out_x, int *out_y);

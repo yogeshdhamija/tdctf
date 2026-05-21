@@ -178,6 +178,26 @@ static const char TEST_MAP_CFG[] =
     "RRRRRRRRRR..........BBBBBBBBBB\n"
     "RRRRRRRRRR..........BBBBBBBBBB\n";
 
+/* Narrow-corridor map for the two BLUE-creep behavior tests that need
+ * a wobble-free path: test_flag_drop_on_death and
+ * test_banana_creep_carries_and_attacks. With wobble (random tiebreak
+ * among equal shortest paths) live, those tests can't depend on a
+ * specific approach route through the 30x20 fixture map. Here the BLUE
+ * spawn → RED flag leg is a straight horizontal corridor: spawn (19,2)
+ * walking west along y=2 to the RED flag at (3,2). Every step on row 2
+ * is the unique shortest move (a y=1 or y=3 detour adds 2 steps), so
+ * BFS picks one candidate without rolling RNG — the tests can assert
+ * "at tick N the creep is at (15-N, 2)" without flakiness. RED's
+ * landmarks (red_spawn, red_recep, blue_flag) exist only to satisfy
+ * map validity. Width 20, height 5 keeps the sim small. */
+static const char TEST_MAP_CORRIDOR_CFG[] =
+    "grid\n"
+    "RRRRRRRRRR..........\n"
+    "RRRRRRRRRR..........\n"
+    "1RRrRRRRRR.........2\n"
+    "[RRRRRRRRR..........\n"
+    "RRRRRRRRRRb........]\n";
+
 /* BANANA fixture for test_banana_creep_carries_and_attacks. A single
  * upgrade spawns 1 creep that both carries the flag (can_carry_flag=1)
  * AND damages adjacent enemy towers (melee_damage > 0). Slot 0 is the

@@ -587,20 +587,27 @@ static void test_win_condition(void) {
 
 static void test_flag_drop_on_death(void) {
     g_test = "flag_drop_on_death";
-    game_init_with_configs_and_map(TEST_TOWERS_CFG, TEST_CREEP_UPGRADES_CFG, TEST_MAP_CFG);
+    /* Corridor map: BLUE spawn (19,2) walks west along y=2 to RED flag
+     * (3,2). The straight-line corridor has no shortest-path ties so
+     * pathing wobble doesn't perturb when the carrier enters tower range. */
+    game_init_with_configs_and_map(TEST_TOWERS_CFG, TEST_CREEP_UPGRADES_CFG, TEST_MAP_CORRIDOR_CFG);
     const GameState *s = game_get_state();
 
-    /* RED places one gunner at (5,15) — the first cell of BLUE's return
-     * half. Damage profile: gunner = 10/shot @ cooldown 2; retriever HP =
-     * 20. As the BLUE retriever approaches the flag at (4,15), the gunner
-     * fires once at range 3 (HP 20→10). The retriever picks up the flag at
-     * (4,15), then has to detour around the gunner cell — its first detour
-     * step lands within range again and the second shot kills it carrying
-     * the flag, leaving a drop at (4,16). (Two gunners would kill before
-     * pickup, leaving the flag at_home.) */
+    /* GUNNER at (3,1), one cell above the flag. Range 3 + cooldown 2 +
+     * dmg 10 against the 20-HP retriever produces this timing:
+     *   tick 14 — creep at (5,2), Manhattan 3 → fires (HP 20→10), cd=2
+     *   tick 15 — creep at (4,2), cd 2→1, no fire
+     *   tick 16 — creep at (3,2), pickup, cd 1→0, no fire (still cooling)
+     *   tick 17 — creep moved east of flag, cd 0 → fires (HP 10→0)
+     *             carrier dies → flag drops at its current cell.
+     * The two shots are calibrated on opposite sides of pickup so the
+     * carrier is alive AT pickup but doomed after, exercising the
+     * "drop on carrier death" path (rather than "kill before pickup").
+     * (Doubling the gunner — or moving it onto the approach — would kill
+     * pre-pickup and leave the flag at_home.) */
     game_set_placement(game_tower_id("GUNNER"));
-    game_grid_click(5, 15);
-    CHECK(tower_id_at(5, 15) >= 0);
+    game_grid_click(3, 1);
+    CHECK(tower_id_at(3, 1) >= 0);
 
     game_lock_in();              /* → PLAN_BLUE */
     game_buy_creep_upgrade(0);
@@ -608,10 +615,8 @@ static void test_flag_drop_on_death(void) {
     run_sim_to_completion();
     enter_sim();                 /* SIMULATE turn 2 */
 
-    /* Drop lands at ~tick 32 of the sim phase (25 ticks west + 5 south +
-     * 1 detour step). Wait a bit longer to be safe. */
     int observed_drop = 0;
-    for (int i = 0; i < 40; i++) {
+    for (int i = 0; i < 30; i++) {
         step_ticks(1);
         /* Check whether the flag is ever in a "dropped" state: not at_home
          * AND not carried. That can only happen if a carrier died. */
@@ -634,18 +639,19 @@ static void test_flag_drop_on_death(void) {
  * TEST_TOWERS_CFG) live in test_fixtures.h. */
 static void test_banana_creep_carries_and_attacks(void) {
     g_test = "banana_creep_carries_and_attacks";
-    /* TEST_CREEP_BANANA_CFG declares a single upgrade (slot 0) that spawns
-     * 1 BANANA per turn after 1 turn of research. */
-    game_init_with_configs_and_map(TEST_TOWERS_CFG, TEST_CREEP_BANANA_CFG, TEST_MAP_CFG);
+    /* Corridor map: BLUE spawn (19,2) walks west along y=2 to RED flag
+     * (3,2). One BLOCKER placed on y=1, adjacent to the corridor, lets
+     * the BANANA brush past and melee it on a known tick regardless of
+     * pathing wobble. */
+    game_init_with_configs_and_map(TEST_TOWERS_CFG, TEST_CREEP_BANANA_CFG, TEST_MAP_CORRIDOR_CFG);
     const GameState *s = game_get_state();
 
-    /* RED places a BLOCKER at (4,11). BLUE's spawn is (19,11) and RED's
-     * flag is at (4,15). BLUE's BANANA walks west along y=11, reaches
-     * (5,11) adjacent to the blocker — melee_damage lands — then detours
-     * south to (5,15)→(4,15) and picks up the flag. */
+    /* BLOCKER at (10,1): tick 9 the BANANA arrives at (10,2) — adjacent —
+     * and the melee phase deals melee_damage. The BANANA continues west
+     * to the flag at (3,2) and picks it up at tick 16. */
     game_set_placement(game_tower_id("BLOCKER"));
-    game_grid_click(4, 11);
-    int bid = tower_id_at(4, 11);
+    game_grid_click(10, 1);
+    int bid = tower_id_at(10, 1);
     CHECK(bid >= 0);
     int hp_before = s->things[bid].hp;
 
@@ -660,9 +666,8 @@ static void test_banana_creep_carries_and_attacks(void) {
 
     int saw_damage = 0;
     int saw_pickup = 0;
-    /* 14 steps west + 4 south + 1 west = ~19 ticks. Run a bit beyond to
-     * tolerate variability in BFS tiebreaks. */
-    for (int i = 0; i < 30; i++) {
+    /* 16 ticks to walk spawn → flag; loop a bit beyond for safety. */
+    for (int i = 0; i < 25; i++) {
         step_ticks(1);
         if (s->things[bid].hp < hp_before) saw_damage = 1;
         const Thing *banana = find_creep(PLAYER_BLUE, banana_type);
