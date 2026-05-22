@@ -180,6 +180,25 @@ static void test_own_tower_selected_shows_upgrade_destroy(void) {
     CHECK(present(BTN_DESTROY_TOWER));
 }
 
+/* The selected-tower status line shows the build countdown ("BUILDING <n>t")
+ * for a tower mid-build/mid-upgrade — mirroring the "<n>t" the creep-upgrade
+ * tiles show while researching. Setup: place a SLAMMER (build_turns=2),
+ * which leaves it selected and still building on this turn. */
+static void test_selected_tower_shows_build_turns(void) {
+    g_test = "selected_tower_shows_build_turns";
+    game_init_with_configs(TEST_TOWERS_CFG, TEST_CREEP_UPGRADES_CFG);
+    game_set_placement(game_tower_id("SLAMMER"));
+    game_grid_click(6, 4);
+
+    reset_text_log();
+    render_frame(game_get_state());
+    int found = 0;
+    for (int i = 0; i < g_text_call_count; i++)
+        if (strstr(g_text_calls[i].text, "BUILDING") &&
+            strstr(g_text_calls[i].text, "2t")) found = 1;
+    CHECK(found);
+}
+
 /* When the *other* player is planning, the Upgrade/Destroy buttons are
  * not drawn for a selected tower they don't own. */
 static void test_enemy_tower_selected_no_upgrade_destroy(void) {
@@ -333,6 +352,7 @@ int main(void) {
     test_buy_upgrade_button_shows_turn_count();
     test_buy_upgrade_button_disappears_after_purchase();
     test_own_tower_selected_shows_upgrade_destroy();
+    test_selected_tower_shows_build_turns();
     test_enemy_tower_selected_no_upgrade_destroy();
     test_simulation_phase_no_buttons();
     test_stacked_creep_count_badge();

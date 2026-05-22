@@ -299,9 +299,12 @@ void render_frame(const GameState *gs) {
                          t->x, t->y);
                 plat_draw_text(sx + 10, line, buf, 0xEEEEEE);
                 line += 18;
-                snprintf(buf, sizeof(buf), "  HP %d/%d  %s",
-                         t->hp, t->max_hp,
-                         t->tower.build_turns > 0 ? "BUILDING" : "READY");
+                if (t->tower.build_turns > 0)
+                    snprintf(buf, sizeof(buf), "  HP %d/%d  BUILDING %dt",
+                             t->hp, t->max_hp, t->tower.build_turns);
+                else
+                    snprintf(buf, sizeof(buf), "  HP %d/%d  READY",
+                             t->hp, t->max_hp);
                 plat_draw_text(sx + 10, line, buf, 0x999999);
                 line += 22;
                 if (t->owner == p) {
