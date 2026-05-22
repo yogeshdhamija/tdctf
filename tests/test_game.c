@@ -301,6 +301,29 @@ static void test_creep_upgrade_purchase_and_research(void) {
     CHECK(s->players[PLAYER_RED].creep_upgrades[2].completed == 1);
 }
 
+/* ── 8b. research_turns=0 completes at purchase + spawns same-turn ────── */
+
+static void test_zero_research_turns_spawns_same_turn(void) {
+    g_test = "zero_research_turns_spawns_same_turn";
+    game_init_with_configs_and_map(TEST_TOWERS_CFG, TEST_CREEP_UPGRADES_CFG, TEST_MAP_CFG);
+    const GameState *s = game_get_state();
+
+    /* Slot 4 is the research_turns=0 fixture. */
+    CHECK(game_creep_upgrade_research_turns(4) == 0);
+    game_buy_creep_upgrade(4);
+    /* Completed flips to 1 at purchase — without the fix, this would stay 0
+     * forever because the end-of-sim decrement only fires when
+     * turns_remaining > 0. */
+    CHECK(s->players[PLAYER_RED].creep_upgrades[4].purchased == 1);
+    CHECK(s->players[PLAYER_RED].creep_upgrades[4].completed == 1);
+    CHECK(s->players[PLAYER_RED].creep_upgrades[4].turns_remaining == 0);
+
+    /* Enter sim THIS turn — creeps must spawn at start of the simulation,
+     * matching the tower build_turns=0 same-turn-active semantic. */
+    enter_sim();
+    CHECK(count_creeps(PLAYER_RED, game_creep_type_id("RETRIEVER")) == 1);
+}
+
 /* ── 9. Creep spawn count reflects completed upgrades ───────────────── */
 
 static void test_completed_upgrade_spawns_retriever(void) {
@@ -719,6 +742,7 @@ int main(void) {
     test_tower_destroy();
     test_tower_destroy_rejects_enemy();
     test_creep_upgrade_purchase_and_research();
+    test_zero_research_turns_spawns_same_turn();
     test_completed_upgrade_spawns_retriever();
     test_resource_tower_income();
     test_gunner_damages_creep();

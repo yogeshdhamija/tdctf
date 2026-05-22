@@ -111,8 +111,10 @@ static const char TEST_TOWERS_CFG[] =
  *   slot 1: +2 siege,      1-turn research
  *   slot 2: +2 retrievers, 2-turn research, cost 60 (creep_upgrade_purchase_and_research)
  *   slot 3: +2 siege II,   2-turn research
+ *   slot 4: +1 retriever, 0-turn research (instant) — exercises the
+ *           research_turns=0 same-turn-spawn path
  * Slot order is what test_game.c references by index, so changes here must
- * keep those four slots aligned. */
+ * keep those slots aligned. */
 static const char TEST_CREEP_UPGRADES_CFG[] =
     "creep RETRIEVER\n"
     "  code            R\n"
@@ -146,7 +148,13 @@ static const char TEST_CREEP_UPGRADES_CFG[] =
     "  cost            70\n"
     "  research_turns  2\n"
     "  spawn           SIEGE 2\n"
-    "  description     +2 Siege II\n";
+    "  description     +2 Siege II\n"
+
+    "upgrade RETRIEVER_INSTANT\n"
+    "  cost            20\n"
+    "  research_turns  0\n"
+    "  spawn           RETRIEVER 1\n"
+    "  description     +1 Retriever instant\n";
 
 /* Map fixture for behavior tests. Mirrors the 30x20 layout the suite was
  * originally written against — RED zone at x<10, BLUE at x>=20, neutral

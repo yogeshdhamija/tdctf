@@ -444,6 +444,11 @@ void game_buy_creep_upgrade(int idx) {
     s.players[p].resources -= cfg->cost;
     u->purchased = 1;
     u->turns_remaining = cfg->research_turns;
+    /* research_turns 0 means "complete immediately, spawn this turn's sim" —
+     * the analog of tower build_turns 0. Without this, the end-of-sim
+     * decrement loop never sets `completed`, since it only fires when
+     * turns_remaining > 0, and the upgrade would be silently stuck forever. */
+    if (u->turns_remaining == 0) u->completed = 1;
 }
 
 /* ── Simulation ─────────────────────────────────────────── */
