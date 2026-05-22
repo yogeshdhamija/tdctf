@@ -126,30 +126,34 @@ void plat_draw_triangle(int x1, int y1, int x2, int y2, int x3, int y3, uint32_t
 /* The browser URL is the source of truth for "which snapshot is loaded".
  * On every lock_in we encode the new state and pushState — so each click
  * adds a history entry and back/forward navigates between snapshots.
- * On initial load and on popstate we read ?s=… from the URL and load it
- * (or fall back to a fresh game when the param is absent). */
+ * On initial load and on popstate we read #s=… from the URL and load it
+ * (or fall back to a fresh game when the fragment is absent).
+ *
+ * The snapshot lives in the URL *fragment* (hash) rather than the query
+ * string so that index.html is one cacheable resource: fragments are not
+ * sent to the server and don't participate in the HTTP cache key. */
 
 EM_JS(void, js_push_snapshot, (const char *snapshot), {
     var s = UTF8ToString(snapshot);
     var url = new URL(window.location);
-    url.searchParams.set("s", s);
+    url.hash = "s=" + s;
     history.pushState(null, "", url);
 });
 
 EM_JS(void, js_replace_snapshot, (const char *snapshot), {
     var s = UTF8ToString(snapshot);
     var url = new URL(window.location);
-    url.searchParams.set("s", s);
+    url.hash = "s=" + s;
     history.replaceState(null, "", url);
 });
 
-/* Reads ?s=… into the wasm buffer. Returns 1 if a snapshot was present,
- * 0 if the URL had no `s` param. */
+/* Reads #s=… into the wasm buffer. Returns 1 if a snapshot was present,
+ * 0 if the URL fragment doesn't start with `s=`. */
 EM_JS(int, js_read_url_snapshot, (char *buf, int buf_size), {
-    var url = new URL(window.location);
-    var s = url.searchParams.get("s");
-    if (s === null) return 0;
-    stringToUTF8(s, buf, buf_size);
+    var h = window.location.hash;
+    if (h.charAt(0) === "#") h = h.substring(1);
+    if (h.substring(0, 2) !== "s=") return 0;
+    stringToUTF8(h.substring(2), buf, buf_size);
     return 1;
 });
 
