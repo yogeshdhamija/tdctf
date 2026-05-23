@@ -75,6 +75,14 @@ void render_frame(const GameState *gs) {
     else if (gs->phase == PHASE_PLAN_RED) g_viewer = PLAYER_RED;
     else g_viewer = (gs->sim_viewer == PLAYER_BLUE) ? PLAYER_BLUE : PLAYER_RED;
 
+    /* PRE_SIM is the "choose whose view to watch the sim from" stage —
+     * before a viewer is committed, rendering anything that belongs to a
+     * specific player (towers, creeps, beams, flags, spawns, receptacles,
+     * resources) would leak that player's state through whatever default
+     * viewer is set. Hide all player-owned entities; only the empty map
+     * (zones, grid lines) and the sidebar buttons remain. */
+    int hide_players = (gs->phase == PHASE_PRE_SIM);
+
     plat_clear(0x111111);
 
     /* Grid zones — always drawn at full strength regardless of fog. Per
@@ -91,6 +99,7 @@ void render_frame(const GameState *gs) {
     for (int y = 0; y <= gs->grid_h; y++)
         plat_draw_line(0, y * CELL_SIZE, gw, y * CELL_SIZE, 0x303030);
 
+    if (!hide_players) {
     /* Receptacles */
     for (int p = 0; p < 2; p++) {
         int rx = gs->receptacle_x[p] * CELL_SIZE;
@@ -289,6 +298,7 @@ void render_frame(const GameState *gs) {
         plat_draw_rect(gs->selected_x * CELL_SIZE + 1, gs->selected_y * CELL_SIZE + 1,
                        CELL_SIZE - 2, CELL_SIZE - 2, 0xFFFFFF);
     }
+    } /* end if (!hide_players) */
 
     /* Placement-intent hint banner */
     if (gs->placement_intent >= 0 && (gs->phase == PHASE_PLAN_RED || gs->phase == PHASE_PLAN_BLUE)) {
@@ -325,25 +335,28 @@ void render_frame(const GameState *gs) {
     }
 
     /* Player blocks. Enemy resources/income are masked under fog — the
-     * viewer doesn't get their opponent's exact economy. */
-    for (int p = 0; p < 2; p++) {
-        int current = (gs->phase == PHASE_PLAN_RED && p == PLAYER_RED) ||
-                      (gs->phase == PHASE_PLAN_BLUE && p == PLAYER_BLUE);
-        if (current)
-            plat_fill_rect(sx + 4, line - 5, SIDEBAR_W - 8, 22, 0x2A2A40);
-        if ((PlayerID)p == g_viewer) {
-            snprintf(buf, sizeof(buf), "%s  $%d  +%d",
-                     p == PLAYER_RED ? "RED" : "BLUE",
-                     gs->players[p].resources, gs->players[p].income_per_turn);
-        } else {
-            snprintf(buf, sizeof(buf), "%s  $???  +??",
-                     p == PLAYER_RED ? "RED" : "BLUE");
+     * viewer doesn't get their opponent's exact economy. Skipped during
+     * PRE_SIM: no viewer is committed yet, so a default viewer would leak
+     * one side's real numbers. */
+    if (!hide_players) {
+        for (int p = 0; p < 2; p++) {
+            int current = (gs->phase == PHASE_PLAN_RED && p == PLAYER_RED) ||
+                          (gs->phase == PHASE_PLAN_BLUE && p == PLAYER_BLUE);
+            if (current)
+                plat_fill_rect(sx + 4, line - 5, SIDEBAR_W - 8, 22, 0x2A2A40);
+            if ((PlayerID)p == g_viewer) {
+                snprintf(buf, sizeof(buf), "%s  $%d  +%d",
+                         p == PLAYER_RED ? "RED" : "BLUE",
+                         gs->players[p].resources, gs->players[p].income_per_turn);
+            } else {
+                snprintf(buf, sizeof(buf), "%s  $???  +??",
+                         p == PLAYER_RED ? "RED" : "BLUE");
+            }
+            plat_draw_text(sx + 10, line, buf, player_color((PlayerID)p));
+            line += 22;
         }
-        plat_draw_text(sx + 10, line, buf, player_color((PlayerID)p));
-        line += 22;
+        line += 4;
     }
-
-    line += 4;
 
     if (is_plan) {
         PlayerID p = game_planning_player();

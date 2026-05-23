@@ -268,6 +268,46 @@ static void test_pre_sim_offers_view_choice(void) {
         CHECK(!present(BTN_PLACE_TOWER_BASE + i));
 }
 
+/* During PRE_SIM no viewer has been committed yet, so rendering anything
+ * player-owned would leak that player's state through whatever the default
+ * viewer is. Both players place a Gunner in their own zone; on PRE_SIM no
+ * tower glyph (own or enemy) and no resource-amount text should appear in
+ * the grid area or sidebar. */
+static void test_pre_sim_hides_all_player_state(void) {
+    g_test = "pre_sim_hides_all_player_state";
+    game_init_with_configs_and_map(TEST_TOWERS_CFG, TEST_CREEP_UPGRADES_CFG, TEST_MAP_CFG);
+    /* RED places a Gunner at (3, 4) in their zone (x < 10). */
+    game_set_placement(game_tower_id("GUNNER"));
+    game_grid_click(3, 4);
+    game_lock_in();                /* → PLAN_BLUE */
+    /* BLUE places a Gunner at (24, 4) in their zone (x >= 20). */
+    game_set_placement(game_tower_id("GUNNER"));
+    game_grid_click(24, 4);
+    game_lock_in();                /* → PRE_SIM */
+    CHECK(game_get_state()->phase == PHASE_PRE_SIM);
+
+    reset_text_log();
+    render_frame(game_get_state());
+    int gw = 30 * CELL_SIZE;
+    for (int i = 0; i < g_text_call_count; i++) {
+        const TextCall *tc = &g_text_calls[i];
+        /* No tower glyph anywhere on the canvas. */
+        CHECK(strcmp(tc->text, "G1") != 0);
+        CHECK(strcmp(tc->text, "G1*") != 0);
+        if (tc->x >= gw) {
+            /* Sidebar: no resource line for either player (neither real
+             * nor masked $???). The "$" character only appears in those
+             * lines, so its absence is sufficient. */
+            CHECK(strchr(tc->text, '$') == NULL);
+        }
+    }
+
+    /* The two view-choice buttons are still hittable. */
+    scan_buttons();
+    CHECK(present(BTN_START_SIM_AS_RED));
+    CHECK(present(BTN_START_SIM_AS_BLUE));
+}
+
 /* Fog of war: an enemy tower outside the viewer's vision must not draw
  * its tower-code glyph. RED places a Gunner deep in their own zone; on
  * PLAN_BLUE the viewer is BLUE, who has no vision into RED's territory,
@@ -450,6 +490,7 @@ int main(void) {
     test_enemy_tower_selected_no_upgrade_destroy();
     test_simulation_phase_no_buttons();
     test_pre_sim_offers_view_choice();
+    test_pre_sim_hides_all_player_state();
     test_fog_hides_enemy_tower_glyph();
     test_fog_masks_enemy_sidebar_resources();
     test_stacked_creep_count_badge();
