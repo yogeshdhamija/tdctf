@@ -10,7 +10,7 @@
  * creep_config.h. Kept as local defines so game.h doesn't need to pull
  * in the catalog header (mirrors how MAX_THINGS sizes the things array
  * without dragging tower_config.h into game.h). */
-#define MAX_CREEP_UPGRADES 8
+#define MAX_CREEP_UPGRADES 16
 #define MAX_CREEP_TYPES    8
 #define MAX_SPAWN_QUEUE 64
 #define MAX_BEAMS 64
