@@ -110,8 +110,7 @@ $(TEST_SNAPSHOT_BIN): $(TEST_SNAPSHOT_SRCS) $(TOWER_CONFIG_HDR) $(CREEP_CONFIG_H
 $(OUT): $(SRCS) $(TOWER_CONFIG_HDR) $(CREEP_CONFIG_HDR) $(MAP_CONFIG_HDR) $(SHELL_HTML) | build
 	@SHA=$$(git rev-parse --short HEAD 2>/dev/null || echo unknown); \
 	 MSG=$$(git log -1 --pretty=%s 2>/dev/null || echo "no commit"); \
-	 DIRTY=$$(git diff --quiet 2>/dev/null && git diff --cached --quiet 2>/dev/null || echo " (dirty)"); \
-	 INFO=$$(printf '%s%s — %s' "$$SHA" "$$DIRTY" "$$MSG" \
+	 INFO=$$(printf '%s — %s' "$$SHA" "$$MSG" \
 	         | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' \
 	         | sed -e 's/[\\&|]/\\&/g'); \
 	 sed "s|{{BUILD_INFO}}|$$INFO|g" $(SHELL_HTML) > $(GEN_SHELL_HTML)
