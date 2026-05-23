@@ -206,6 +206,7 @@ int              game_creep_upgrade_cost(int idx);
 int              game_creep_upgrade_research_turns(int idx);
 const char      *game_creep_upgrade_description(int idx);
 int              game_creep_upgrade_creep_type(int idx);    /* target CreepType, or -1 */
+int              game_creep_upgrade_requires(int idx);       /* prerequisite upgrade index, or -1 */
 
 PlayerID         game_planning_player(void);                /* meaningful only in planning */
 

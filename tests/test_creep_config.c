@@ -179,6 +179,7 @@ static void test_defaults(void) {
     CHECK(u->can_carry_flag == 0);
     CHECK(u->melee_damage == 0);
     CHECK(u->spawn_order == 0);
+    CHECK(u->requires == -1);
     CHECK(u->description[0] == 0);
     CHECK(u->set_flags == 0);
 }
@@ -283,6 +284,45 @@ static void test_spawn_order(void) {
               "upgrade X\n  cost 1\n  spawn_order banana\n") != 0);
 }
 
+/* ── 7c. `requires` resolves to a previously-declared upgrade index. ─── */
+static void test_requires(void) {
+    g_test = "requires";
+
+    /* Happy path: B requires A. */
+    const char *ok =
+        "creep R\n"
+        "upgrade A\n  cost 1\n"
+        "upgrade B\n  cost 1\n  requires A\n";
+    CHECK(creep_config_load_from_string(ok) == 0);
+    int a = creep_config_lookup_upgrade("A");
+    int b = creep_config_lookup_upgrade("B");
+    CHECK(creep_config_get()->upgrades[a].requires == -1);
+    CHECK(creep_config_get()->upgrades[b].requires == a);
+
+    /* Default: no `requires` directive → -1. */
+    const char *bare =
+        "upgrade ONLY\n  cost 1\n";
+    CHECK(creep_config_load_from_string(bare) == 0);
+    CHECK(creep_config_get()->upgrades[0].requires == -1);
+
+    /* Forward reference: B requires C, but C is declared later. Lookup
+     * happens at parse time (same rule as `creep` directive). */
+    const char *forward =
+        "upgrade B\n  cost 1\n  requires C\n"
+        "upgrade C\n  cost 1\n";
+    CHECK(creep_config_load_from_string(forward) != 0);
+
+    /* Unknown id is an error. */
+    const char *unknown =
+        "upgrade A\n  cost 1\n  requires GHOST\n";
+    CHECK(creep_config_load_from_string(unknown) != 0);
+
+    /* Self-reference is an error — an upgrade can't gate itself. */
+    const char *self =
+        "upgrade A\n  cost 1\n  requires A\n";
+    CHECK(creep_config_load_from_string(self) != 0);
+}
+
 /* ── 8. Declaration order is preserved as catalog index order, separately
  *      for types and upgrades. ────────────────────────────────────── */
 static void test_declaration_order(void) {
@@ -313,6 +353,7 @@ int main(void) {
     test_set_flags();
     test_error_cases();
     test_spawn_order();
+    test_requires();
     test_declaration_order();
     printf("%d assertions, %d failures\n", g_assertions, g_fail);
     return g_fail ? 1 : 0;

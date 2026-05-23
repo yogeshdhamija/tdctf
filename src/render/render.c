@@ -285,8 +285,14 @@ void render_frame(const GameState *gs) {
             } else {
                 int cost  = game_creep_upgrade_cost(i);
                 int turns = game_creep_upgrade_research_turns(i);
-                snprintf(buf, sizeof(buf), "%s $%d %dt", desc, cost, turns);
-                int enabled = gs->players[p].resources >= cost;
+                int req   = game_creep_upgrade_requires(i);
+                int locked = req >= 0 && !gs->players[p].creep_upgrades[req].completed;
+                if (locked) {
+                    snprintf(buf, sizeof(buf), "%s (locked)", desc);
+                } else {
+                    snprintf(buf, sizeof(buf), "%s $%d %dt", desc, cost, turns);
+                }
+                int enabled = !locked && gs->players[p].resources >= cost;
                 draw_button(BTN_BUY_UPGRADE_BASE + i, sx + 10, line,
                             SIDEBAR_W - 20, 20, buf, 0, enabled);
             }

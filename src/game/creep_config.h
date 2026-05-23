@@ -56,6 +56,7 @@ typedef struct {
     int  can_carry_flag;                     /* 0/1: picks up enemy flag on contact */
     int  melee_damage;                       /* damage per tick to any adjacent enemy tower (0 = no melee) */
     int  spawn_order;                        /* sort key for the per-turn spawn queue; lower spawns first */
+    int  requires;                           /* prerequisite upgrade index (must be completed before purchase), or -1 */
     char description[CREEP_UPGRADE_DESC_MAX];/* sidebar label; may contain spaces */
     unsigned int set_flags;                  /* bitmask: which of the above were explicitly set in the cfg */
 } CreepUpgradeConfig;

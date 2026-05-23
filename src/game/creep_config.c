@@ -40,10 +40,23 @@ static int set_upgrade_creep_target(CreepUpgradeConfig *u, const char *val) {
     return 0;
 }
 
-static int set_upgrade_field(CreepUpgradeConfig *u, const char *key, const char *val) {
+/* `requires` resolves at parse time, so the prerequisite must be declared
+ * before this upgrade — same forward-reference rule as the `creep`
+ * directive. An upgrade can't require itself. */
+static int set_upgrade_requires(CreepUpgradeConfig *u, const char *val,
+                                int self_idx) {
+    int idx = creep_config_lookup_upgrade(val);
+    if (idx < 0 || idx == self_idx) return -1;
+    u->requires = idx;
+    return 0;
+}
+
+static int set_upgrade_field(CreepUpgradeConfig *u, int self_idx,
+                             const char *key, const char *val) {
     if (!strcmp(key, "cost"))           return parse_int(val, &u->cost);
     if (!strcmp(key, "research_turns")) return parse_int(val, &u->research_turns);
     if (!strcmp(key, "creep"))          return set_upgrade_creep_target(u, val);
+    if (!strcmp(key, "requires"))       return set_upgrade_requires(u, val, self_idx);
     if (!strcmp(key, "count")) {
         int rc = parse_int(val, &u->count);
         if (rc == 0) u->set_flags |= CREEP_UPG_SET_COUNT;
@@ -87,9 +100,13 @@ typedef enum { SECTION_NONE, SECTION_TYPE, SECTION_UPGRADE } SectionKind;
 
 int creep_config_load_from_string(const char *src) {
     memset(&g_catalog, 0, sizeof(g_catalog));
-    /* Default creep_type to -1 ("no target") so an upgrade without an
-     * explicit `creep` directive cleanly resolves to "spawns nothing". */
-    for (int i = 0; i < CREEP_UPGRADE_MAX_COUNT; i++) g_catalog.upgrades[i].creep_type = -1;
+    /* Default creep_type / requires to -1 (sentinels for "no target" /
+     * "no prerequisite"), so an upgrade without an explicit `creep` /
+     * `requires` directive cleanly resolves. */
+    for (int i = 0; i < CREEP_UPGRADE_MAX_COUNT; i++) {
+        g_catalog.upgrades[i].creep_type = -1;
+        g_catalog.upgrades[i].requires   = -1;
+    }
 
     SectionKind kind = SECTION_NONE;
     int  current_idx = -1;
@@ -123,6 +140,7 @@ int creep_config_load_from_string(const char *src) {
             CreepUpgradeConfig *u = &g_catalog.upgrades[g_catalog.upgrade_count];
             memset(u, 0, sizeof(*u));
             u->creep_type = -1;
+            u->requires   = -1;
             strncpy(u->id, val, CREEP_UPGRADE_ID_MAX - 1);
             current_idx = g_catalog.upgrade_count++;
             kind = SECTION_UPGRADE;
@@ -146,7 +164,7 @@ int creep_config_load_from_string(const char *src) {
         /* All other body keys are upgrade-only. A creep type's section is
          * just its declaration line — there are no inner keys for it. */
         if (kind != SECTION_UPGRADE || !*val) return -1;
-        if (set_upgrade_field(&g_catalog.upgrades[current_idx], key, val) != 0) return -1;
+        if (set_upgrade_field(&g_catalog.upgrades[current_idx], current_idx, key, val) != 0) return -1;
     }
 
     return 0;

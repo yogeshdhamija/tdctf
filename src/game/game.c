@@ -84,6 +84,7 @@ int  game_creep_upgrade_cost(int idx)             { return cu_spec(idx)->cost; }
 int  game_creep_upgrade_research_turns(int idx)   { return cu_spec(idx)->research_turns; }
 const char *game_creep_upgrade_description(int idx) { return cu_spec(idx)->description; }
 int  game_creep_upgrade_creep_type(int idx)       { return cu_spec(idx)->creep_type; }
+int  game_creep_upgrade_requires(int idx)         { return cu_spec(idx)->requires; }
 
 PlayerID game_planning_player(void) {
     return (s.phase == PHASE_PLAN_BLUE) ? PLAYER_BLUE : PLAYER_RED;
@@ -446,6 +447,10 @@ void game_buy_creep_upgrade(int idx) {
     CreepUpgrade *u = &s.players[p].creep_upgrades[idx];
     const CreepUpgradeConfig *cfg = cu_spec(idx);
     if (u->purchased)                       { set_status("Already purchased");   return; }
+    if (cfg->requires >= 0 &&
+        !s.players[p].creep_upgrades[cfg->requires].completed) {
+        set_status("Prerequisite not complete"); return;
+    }
     if (s.players[p].resources < cfg->cost) { set_status("Not enough resources"); return; }
     s.players[p].resources -= cfg->cost;
     u->purchased = 1;

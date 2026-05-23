@@ -259,6 +259,32 @@ static const char TEST_CREEP_SPAWN_ORDER_CFG[] =
     "  spawn_order     1\n"
     "  description     +1 Siege\n";
 
+/* Requires fixture: slot 1 (LOCKED) gates on slot 0 (GATE) being completed.
+ * Both have instant research so a single enter_sim() turn flips the gate. */
+static const char TEST_CREEP_REQUIRES_CFG[] =
+    "creep RETRIEVER\n"
+
+    "upgrade GATE\n"
+    "  cost            10\n"
+    "  research_turns  0\n"
+    "  creep           RETRIEVER\n"
+    "  count           1\n"
+    "  code            R\n"
+    "  hp              20\n"
+    "  can_carry_flag  1\n"
+    "  description     Gate upgrade\n"
+
+    "upgrade LOCKED\n"
+    "  cost            10\n"
+    "  research_turns  0\n"
+    "  creep           RETRIEVER\n"
+    "  count           2\n"
+    "  code            R\n"
+    "  hp              20\n"
+    "  can_carry_flag  1\n"
+    "  requires        GATE\n"
+    "  description     Locked upgrade\n";
+
 /* BANANA fixture for test_banana_creep_carries_and_attacks. A single
  * upgrade spawns 1 creep that both carries the flag (can_carry_flag=1)
  * AND damages adjacent enemy towers (melee_damage > 0). Slot 0 is the

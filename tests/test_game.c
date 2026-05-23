@@ -326,6 +326,34 @@ static void test_zero_research_turns_spawns_same_turn(void) {
     CHECK(count_creeps(PLAYER_RED, game_creep_type_id("RETRIEVER")) == 1);
 }
 
+/* ── 8c. Upgrade with unmet `requires` can't be purchased; once the
+ *       prerequisite completes, the buy goes through. ───────────────── */
+
+static void test_creep_upgrade_requires_gating(void) {
+    g_test = "creep_upgrade_requires_gating";
+    game_init_with_configs_and_map(TEST_TOWERS_CFG, TEST_CREEP_REQUIRES_CFG, TEST_MAP_CFG);
+    const GameState *s = game_get_state();
+
+    /* Slot 1 (LOCKED) requires slot 0 (GATE). Catalog exposes the link. */
+    CHECK(game_creep_upgrade_requires(0) == -1);
+    CHECK(game_creep_upgrade_requires(1) == 0);
+
+    /* Attempting to buy the locked upgrade before the gate is completed
+     * is a no-op: no resource debit, no purchased flag. */
+    int res_before = s->players[PLAYER_RED].resources;
+    game_buy_creep_upgrade(1);
+    CHECK(s->players[PLAYER_RED].creep_upgrades[1].purchased == 0);
+    CHECK(s->players[PLAYER_RED].resources == res_before);
+
+    /* Complete the gate (research_turns=0 → completed immediately). */
+    game_buy_creep_upgrade(0);
+    CHECK(s->players[PLAYER_RED].creep_upgrades[0].completed == 1);
+
+    /* Now the locked upgrade is purchasable. */
+    game_buy_creep_upgrade(1);
+    CHECK(s->players[PLAYER_RED].creep_upgrades[1].purchased == 1);
+}
+
 /* ── 9. Creep spawn count reflects completed upgrades ───────────────── */
 
 static void test_completed_upgrade_spawns_retriever(void) {
@@ -922,6 +950,7 @@ int main(void) {
     test_tower_destroy_rejects_enemy();
     test_creep_upgrade_purchase_and_research();
     test_zero_research_turns_spawns_same_turn();
+    test_creep_upgrade_requires_gating();
     test_completed_upgrade_spawns_retriever();
     test_resource_tower_income();
     test_gunner_damages_creep();
