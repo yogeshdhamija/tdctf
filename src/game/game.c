@@ -604,14 +604,20 @@ static void sim_one_tick(void) {
         const TowerLevelStats *atk = &spec(t->tower.type)->level[t->tower.level - 1];
         if (atk->range == 0) continue;
         if (t->tower.cooldown > 0) { t->tower.cooldown--; continue; }
+        /* Among enemy creeps within range of this tower, target the one
+         * closest (Manhattan) to the tower owner's own flag — i.e. the
+         * creep most about to grab it (or, after pickup, the carrier
+         * itself, since a carried flag tracks the carrier's cell). */
+        int fx = s.flags[t->owner].x, fy = s.flags[t->owner].y;
         int best = -1, best_dist = 999;
         for (int j = 0; j < s.thing_count; j++) {
             Thing *c = &s.things[j];
             if (c->tag != THING_CREEP || !c->alive) continue;
             if (c->owner == t->owner) continue;
-            int d = abs_i(c->x - t->x) + abs_i(c->y - t->y);
-            if (d > atk->range) continue;
-            if (d < best_dist) { best_dist = d; best = j; }
+            int dt = abs_i(c->x - t->x) + abs_i(c->y - t->y);
+            if (dt > atk->range) continue;
+            int df = abs_i(c->x - fx) + abs_i(c->y - fy);
+            if (df < best_dist) { best_dist = df; best = j; }
         }
         if (best < 0) continue;
         Thing *tgt = &s.things[best];

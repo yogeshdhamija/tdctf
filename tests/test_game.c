@@ -475,6 +475,66 @@ static void test_tower_crit_uses_crit_dmg(void) {
     CHECK(saw_kill_in_one_tick);
 }
 
+/* ── 11c. Tower targets the creep closest to the defended flag ──────── */
+
+/* Towers no longer pick the creep closest to themselves — they pick the
+ * in-range enemy creep with the smallest Manhattan distance to the tower
+ * owner's own flag (the one the enemy is trying to steal). Setup snaps
+ * two BLUE retrievers onto cells where the two metrics disagree:
+ *   A at (4,14) — tower dist 2, flag dist 1
+ *   B at (4,13) — tower dist 1, flag dist 2
+ * The old closest-to-tower rule would shoot B; the new rule shoots A. */
+static void test_tower_targets_creep_closest_to_flag(void) {
+    g_test = "tower_targets_creep_closest_to_flag";
+    game_init_with_configs_and_map(TEST_TOWERS_CFG, TEST_CREEP_UPGRADES_CFG, TEST_MAP_CFG);
+    const GameState *s = game_get_state();
+
+    /* RED places GUNNER at (5,13). RED's flag (the defended flag) is at
+     * (4,15). Range 3, dmg 10, build_turns 0 so it's hot immediately. */
+    game_set_placement(game_tower_id("GUNNER"));
+    game_grid_click(5, 13);
+    int tid = tower_id_at(5, 13);
+    CHECK(tid >= 0);
+
+    /* BLUE buys +2 retrievers (slot 2, 2-turn research) so two BLUE creeps
+     * land on the field — we'll snap them onto chosen cells below. Two
+     * turns of research means the creeps spawn on sim turn 3. */
+    game_lock_in();              /* PLAN_RED → PLAN_BLUE */
+    game_buy_creep_upgrade(2);   /* RETRIEVER_2X */
+    game_lock_in();              /* → SIMULATE turn 1 (research running) */
+    run_sim_to_completion();
+    enter_sim();                 /* → SIMULATE turn 2 (research finishes at end) */
+    run_sim_to_completion();
+    enter_sim();                 /* → SIMULATE turn 3, queue has 2 retrievers */
+    step_ticks(2);               /* one per tick → both retrievers on the field */
+
+    int rt = game_creep_type_id("RETRIEVER");
+    int idx_a = -1, idx_b = -1;
+    for (int i = 0; i < s->thing_count; i++) {
+        const Thing *t = &s->things[i];
+        if (t->tag != THING_CREEP || !t->alive) continue;
+        if (t->owner != PLAYER_BLUE || t->creep.type != rt) continue;
+        if (idx_a < 0) idx_a = i; else { idx_b = i; break; }
+    }
+    CHECK(idx_a >= 0 && idx_b >= 0);
+
+    GameState *mut = (GameState *)s;
+    mut->things[idx_a].x = 4; mut->things[idx_a].y = 14;
+    mut->things[idx_b].x = 4; mut->things[idx_b].y = 13;
+    /* Freeze movement for this one tick so positions stay fixed when the
+     * tower picks its target. */
+    mut->things[idx_a].creep.slow_ticks = 1;
+    mut->things[idx_b].creep.slow_ticks = 1;
+    mut->things[tid].tower.cooldown = 0;   /* ensure the tower fires this tick */
+    int hp_a_before = mut->things[idx_a].hp;
+    int hp_b_before = mut->things[idx_b].hp;
+
+    step_ticks(1);
+
+    CHECK(mut->things[idx_a].hp == hp_a_before - 10);  /* flag-closer creep hit */
+    CHECK(mut->things[idx_b].hp == hp_b_before);       /* tower-closer creep spared */
+}
+
 /* ── 12. Slammer applies slow_ticks (AoE + slow effect) ──────────────── */
 
 static void test_slammer_slows_creep(void) {
@@ -810,6 +870,7 @@ int main(void) {
     test_completed_upgrade_spawns_retriever();
     test_resource_tower_income();
     test_gunner_damages_creep();
+    test_tower_targets_creep_closest_to_flag();
     test_tower_crit_uses_crit_dmg();
     test_slammer_slows_creep();
     test_siege_attacks_tower();
