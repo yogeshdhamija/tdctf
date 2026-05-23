@@ -7,6 +7,7 @@ GAME_SRCS := src/game/game.c src/game/tower_config.c src/game/creep_config.c src
 
 SRCS := $(GAME_SRCS) src/render/render.c src/platform/platform_web.c
 SHELL_HTML := src/platform/shell.html
+GEN_SHELL_HTML := build/shell.html
 OUT := build/index.html
 
 TOWER_CONFIG_SRC := data/towers.cfg
@@ -18,7 +19,7 @@ MAP_CONFIG_HDR   := build/map_config_data.h
 
 INCLUDES := -Isrc -Ibuild
 
-EMFLAGS := -O2 -s WASM=1 -s SINGLE_FILE=1 --shell-file $(SHELL_HTML) \
+EMFLAGS := -O2 -s WASM=1 -s SINGLE_FILE=1 --shell-file $(GEN_SHELL_HTML) \
            -s EXPORTED_RUNTIME_METHODS=UTF8ToString,stringToUTF8
 
 TEST_PATHING_BIN := build/test_pathing
@@ -107,6 +108,13 @@ $(TEST_SNAPSHOT_BIN): $(TEST_SNAPSHOT_SRCS) $(TOWER_CONFIG_HDR) $(CREEP_CONFIG_H
 	cc -O0 -g -Wall -Wextra $(INCLUDES) -Itests $(TEST_SNAPSHOT_SRCS) -o $(TEST_SNAPSHOT_BIN)
 
 $(OUT): $(SRCS) $(TOWER_CONFIG_HDR) $(CREEP_CONFIG_HDR) $(MAP_CONFIG_HDR) $(SHELL_HTML) | build
+	@SHA=$$(git rev-parse --short HEAD 2>/dev/null || echo unknown); \
+	 MSG=$$(git log -1 --pretty=%s 2>/dev/null || echo "no commit"); \
+	 DIRTY=$$(git diff --quiet 2>/dev/null && git diff --cached --quiet 2>/dev/null || echo " (dirty)"); \
+	 INFO=$$(printf '%s%s — %s' "$$SHA" "$$DIRTY" "$$MSG" \
+	         | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' \
+	         | sed -e 's/[\\&|]/\\&/g'); \
+	 sed "s|{{BUILD_INFO}}|$$INFO|g" $(SHELL_HTML) > $(GEN_SHELL_HTML)
 	source $(EMSDK_ENV) > /dev/null 2>&1 && emcc $(SRCS) -o $(OUT) $(EMFLAGS) $(INCLUDES)
 
 build:
