@@ -235,10 +235,11 @@ static void test_simulation_phase_no_buttons(void) {
 }
 
 /* When multiple creeps share a cell, a per-owner count badge is drawn in the
- * cell so the player can tell the count and type mix. Setup: BLUE buys the
- * +2-retrievers upgrade (2 turn research). Through turns 1 and 2 nothing
- * spawns; on turn 3's sim start two retrievers materialise at the BLUE
- * spawn cell (29,10), stacked. */
+ * cell so the player can tell the count and type mix. Creeps now spawn one
+ * per sim tick (a procession down the path), so they don't pile up on the
+ * spawn cell organically — we construct the overlap directly by walking
+ * forward enough ticks to materialise both retrievers, then snapping the
+ * second one onto the first cell. */
 static void test_stacked_creep_count_badge(void) {
     g_test = "stacked_creep_count_badge";
     game_init_with_configs_and_map(TEST_TOWERS_CFG, TEST_CREEP_UPGRADES_CFG, TEST_MAP_CFG);
@@ -254,25 +255,29 @@ static void test_stacked_creep_count_badge(void) {
         game_frame();
         if (game_get_state()->phase == PHASE_PLAN_RED) break;
     }
-    game_lock_in(); game_lock_in(); /* → SIMULATE turn 3: 2 retrievers spawn together */
+    game_lock_in(); game_lock_in(); /* → SIMULATE turn 3 */
+    /* Two ticks pops both retrievers off the spawn queue; they end up at
+     * different cells along the path. */
+    for (int i = 0; i < 2 * SIM_FRAMES_PER_TICK; i++) game_frame();
 
     const GameState *s = game_get_state();
-    int count = 0;
+    int crowd_x = -1, crowd_y = -1;
+    int seen = 0;
+    GameState *mut = (GameState *)s;
     for (int i = 0; i < s->thing_count; i++) {
-        const Thing *t = &s->things[i];
+        Thing *t = &mut->things[i];
         if (t->tag != THING_CREEP || !t->alive) continue;
         if (t->owner != PLAYER_BLUE) continue;
-        count++;
-        CHECK(t->x == 19 && t->y == 11);
+        if (seen == 0) { crowd_x = t->x; crowd_y = t->y; }
+        else            { t->x = crowd_x; t->y = crowd_y; }   /* snap onto the first */
+        seen++;
     }
-    CHECK(count == 2);
+    CHECK(seen == 2);
 
     reset_text_log();
     render_frame(s);
-    /* The sidebar also draws "spawn 2R 0S" so we can't just look for "2R"
-     * anywhere — pin to the spawn cell (29,10). */
-    int x_lo = 29 * CELL_SIZE, x_hi = 30 * CELL_SIZE;
-    int y_lo = 10 * CELL_SIZE, y_hi = 11 * CELL_SIZE;
+    int x_lo = crowd_x * CELL_SIZE, x_hi = x_lo + CELL_SIZE;
+    int y_lo = crowd_y * CELL_SIZE, y_hi = y_lo + CELL_SIZE;
     const TextCall *badge = NULL;
     for (int i = 0; i < g_text_call_count; i++) {
         const TextCall *tc = &g_text_calls[i];
@@ -283,7 +288,7 @@ static void test_stacked_creep_count_badge(void) {
             break;
         }
     }
-    //CHECK(badge != NULL);
+    CHECK(badge != NULL);
     if (badge) CHECK(badge->color == 0x4477CC); /* BLUE */
 }
 

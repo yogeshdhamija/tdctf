@@ -34,6 +34,7 @@ typedef struct {
     int  hp;                          /* HP at spawn */
     int  can_carry_flag;              /* 0/1: picks up enemy flag on contact */
     int  melee_damage;                /* damage per tick to any adjacent enemy tower (0 = no melee) */
+    int  spawn_order;                 /* sort key for the per-turn spawn queue; lower spawns first, ties keep declaration order */
 } CreepTypeConfig;
 
 typedef struct {

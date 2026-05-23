@@ -42,6 +42,7 @@ static int set_type_field(CreepTypeConfig *t, const char *key, const char *val) 
     if (!strcmp(key, "hp"))             return parse_int(val, &t->hp);
     if (!strcmp(key, "can_carry_flag")) return parse_int(val, &t->can_carry_flag);
     if (!strcmp(key, "melee_damage"))   return parse_int(val, &t->melee_damage);
+    if (!strcmp(key, "spawn_order"))    return parse_int(val, &t->spawn_order);
     return -1;
 }
 

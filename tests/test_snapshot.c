@@ -225,13 +225,14 @@ static void test_load_survives_upgrade_reorder(void) {
 /* ── 5. Phase round-trip including SIMULATE re-spawns creeps ──────────── */
 
 /* Encoding while phase==SIMULATE must restore back to SIMULATE on load,
- * and start_simulation must run so the deterministic spawn list is
- * recreated from the completed upgrades. */
+ * and start_simulation must run so the deterministic spawn queue is
+ * rebuilt from the completed upgrades. The first tick after load pops the
+ * queue head onto the map. */
 static void test_simulate_phase_respawns_creeps(void) {
     g_test = "simulate_phase_respawns_creeps";
     game_init_with_configs_and_map(TEST_TOWERS_CFG, TEST_CREEP_UPGRADES_CFG, TEST_MAP_CFG);
 
-    /* Force-complete RETRIEVER_1 for RED so a creep is guaranteed to spawn
+    /* Force-complete RETRIEVER_1 for RED so a creep is guaranteed to queue
      * when SIMULATE starts. Going through the normal purchase+research path
      * would require running a turn (which itself triggers a SIMULATE) and
      * is what we want to test resuming from, so we set the flags directly. */
@@ -241,7 +242,7 @@ static void test_simulate_phase_respawns_creeps(void) {
     mut->players[PLAYER_RED].creep_upgrades[0].turns_remaining = 0;
 
     /* Get into PHASE_SIMULATE the regular way — both lock-ins. The 2nd
-     * one calls start_simulation, which spawns the creep. */
+     * one calls start_simulation, which builds the spawn queue. */
     game_lock_in();
     game_lock_in();
     const GameState *s = game_get_state();
@@ -254,9 +255,14 @@ static void test_simulate_phase_respawns_creeps(void) {
     game_init_with_configs_and_map(TEST_TOWERS_CFG, TEST_CREEP_UPGRADES_CFG, TEST_MAP_CFG);
     CHECK(game_snapshot_load(buf) == 0);
     CHECK(s->phase == PHASE_SIMULATE);
+    CHECK(s->sim_tick == 0);
+    /* Queue is rebuilt by start_simulation during the load. */
+    CHECK(s->players[PLAYER_RED].spawn_queue_count == 1);
+    CHECK(s->players[PLAYER_RED].spawn_queue_pos   == 0);
 
-    /* start_simulation should have run during the load, re-spawning the
-     * retriever at RED's spawn point. */
+    /* One sim tick pops the queue head — the retriever appears at RED's
+     * spawn point (then takes its first step on the same tick). */
+    for (int i = 0; i < SIM_FRAMES_PER_TICK; i++) game_frame();
     int rt_id = game_creep_type_id("RETRIEVER");
     int n = 0;
     for (int i = 0; i < s->thing_count; i++) {
@@ -265,7 +271,6 @@ static void test_simulate_phase_respawns_creeps(void) {
             t->creep.type == rt_id) n++;
     }
     CHECK(n == 1);
-    CHECK(s->sim_tick == 0);
 }
 
 /* ── 5b. RNG state round-trips so resumed sims reproduce the same rolls ── */

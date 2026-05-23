@@ -73,6 +73,7 @@ int  game_creep_type_id(const char *name)    { return creep_config_lookup_type(n
 char game_creep_type_code(CreepType t)       { return ct_spec(t)->code; }
 int  game_creep_type_can_carry_flag(CreepType t) { return ct_spec(t)->can_carry_flag; }
 int  game_creep_type_melee_damage(CreepType t)   { return ct_spec(t)->melee_damage; }
+int  game_creep_type_spawn_order(CreepType t)    { return ct_spec(t)->spawn_order; }
 
 int  game_creep_upgrade_count(void)               { return creep_config_get()->upgrade_count; }
 int  game_creep_upgrade_cost(int idx)             { return cu_spec(idx)->cost; }
@@ -469,6 +470,22 @@ static void spawn_creep(PlayerID p, CreepType ct) {
     t->creep.type = ct;
 }
 
+/* Insertion sort the player's spawn queue by each creep type's spawn_order
+ * (ascending). Stable: equal orders keep declaration/insertion order, which
+ * is the order upgrades sit in the catalog. */
+static void sort_spawn_queue(Player *pl) {
+    for (int i = 1; i < pl->spawn_queue_count; i++) {
+        CreepType v  = pl->spawn_queue[i];
+        int       so = ct_spec(v)->spawn_order;
+        int       j  = i - 1;
+        while (j >= 0 && ct_spec(pl->spawn_queue[j])->spawn_order > so) {
+            pl->spawn_queue[j + 1] = pl->spawn_queue[j];
+            j--;
+        }
+        pl->spawn_queue[j + 1] = v;
+    }
+}
+
 static void start_simulation(void) {
     s.phase = PHASE_SIMULATE;
     s.sim_tick = 0;
@@ -478,22 +495,47 @@ static void start_simulation(void) {
         Thing *t = &s.things[i];
         if (t->tag == THING_TOWER) { t->beam_ttl = 0; t->tower.cooldown = 0; }
     }
-    /* For each player, spawn the configured count of the configured creep
-     * type for every completed upgrade. Upgrades without a `spawn` directive
-     * (spawn_type < 0) contribute nothing. */
+    /* Build the per-player spawn queue: for every completed upgrade, push
+     * spawn_count copies of its spawn_type. Then sort by creep-type
+     * spawn_order so creeps appear in the configured order, one per tick.
+     * Upgrades without a `spawn` directive (spawn_type < 0) contribute
+     * nothing. If the catalog ever holds more spawns than MAX_SPAWN_QUEUE
+     * the overflow is silently dropped — bumping the cap is the fix. */
     for (int p = 0; p < 2; p++) {
-        for (int i = 0; i < s.players[p].creep_upgrade_count; i++) {
-            const CreepUpgrade       *u   = &s.players[p].creep_upgrades[i];
+        Player *pl = &s.players[p];
+        pl->spawn_queue_count = 0;
+        pl->spawn_queue_pos   = 0;
+        for (int i = 0; i < pl->creep_upgrade_count; i++) {
+            const CreepUpgrade       *u   = &pl->creep_upgrades[i];
             const CreepUpgradeConfig *cfg = cu_spec(i);
             if (!u->completed) continue;
             if (cfg->spawn_type < 0 || cfg->spawn_count <= 0) continue;
-            for (int n = cfg->spawn_count; n > 0; n--)
-                spawn_creep((PlayerID)p, cfg->spawn_type);
+            for (int n = cfg->spawn_count; n > 0; n--) {
+                if (pl->spawn_queue_count >= MAX_SPAWN_QUEUE) break;
+                pl->spawn_queue[pl->spawn_queue_count++] = cfg->spawn_type;
+            }
         }
+        sort_spawn_queue(pl);
     }
 }
 
+/* Pop the next queued creep (if any) for the player and spawn it at the
+ * spawn cell. Called once per player at the start of every sim tick — that
+ * gives the wave a one-cell stride along the path. */
+static void drain_spawn_queue(PlayerID p) {
+    Player *pl = &s.players[p];
+    if (pl->spawn_queue_pos >= pl->spawn_queue_count) return;
+    spawn_creep(p, pl->spawn_queue[pl->spawn_queue_pos++]);
+}
+
 static void sim_one_tick(void) {
+    /* Spawn the next queued creep per player, if any. This runs before
+     * movement so a freshly-spawned creep takes its first step on the same
+     * tick — preserving the "first creep is at step N after N ticks" timing
+     * the older all-at-once spawning model implied. */
+    drain_spawn_queue(PLAYER_RED);
+    drain_spawn_queue(PLAYER_BLUE);
+
     /* Move creeps. Per docs/game-design.md §10: each creep takes the
      * shortest unblocked path to the enemy flag's current cell, then once
      * it touches the flag (visited_flag flips) to its own receptacle.

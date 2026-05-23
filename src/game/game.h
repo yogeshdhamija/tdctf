@@ -11,6 +11,7 @@
  * header (mirrors how MAX_THINGS sizes the things array without dragging
  * tower_config.h into game.h). */
 #define MAX_CREEP_UPGRADES 8
+#define MAX_SPAWN_QUEUE 64
 #define MAX_BEAMS 64
 #define SIM_TICKS_PER_TURN 100
 #define SIM_FRAMES_PER_TICK 8
@@ -82,6 +83,15 @@ typedef struct {
     int          creep_upgrade_count;
     int          pending_place_x, pending_place_y; /* RED-only placement queued for conflict resolve */
     int          pending_place_type;               /* -1 if no pending placement */
+    /* Spawn queue: the flat list of creep types this player will spawn over
+     * the current sim, sorted by each type's spawn_order. One entry is
+     * drained at the start of each sim tick — the wave appears as a line
+     * along the path rather than a stack on the spawn cell. Built fresh in
+     * start_simulation() from each completed upgrade's (spawn_type ×
+     * spawn_count); reset on every sim. */
+    CreepType    spawn_queue[MAX_SPAWN_QUEUE];
+    int          spawn_queue_count;
+    int          spawn_queue_pos;
 } Player;
 
 typedef struct {
@@ -154,6 +164,7 @@ int              game_creep_type_id(const char *name);     /* -1 if not found */
 char             game_creep_type_code(CreepType t);
 int              game_creep_type_can_carry_flag(CreepType t);
 int              game_creep_type_melee_damage(CreepType t);
+int              game_creep_type_spawn_order(CreepType t);
 
 /* Creep upgrade catalog accessors. Per-player dynamic state (purchased /
  * completed / turns_remaining) lives on Player.creep_upgrades[idx]. */

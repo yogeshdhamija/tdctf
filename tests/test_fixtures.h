@@ -206,6 +206,42 @@ static const char TEST_MAP_CORRIDOR_CFG[] =
     "[RRRRRRRRR..........\n"
     "RRRRRRRRRRb........]\n";
 
+/* Spawn-order fixture: two creep types with explicit spawn_order keys so
+ * the queue's sort visibly disagrees with declaration order. RETRIEVER is
+ * declared first but spawn_order=2; SIEGE is declared second but
+ * spawn_order=1, so after sort SIEGE appears before RETRIEVER even when an
+ * upgrade list adds them in the opposite order.
+ *
+ * Slots used by tests:
+ *   0: RETRIEVER_1 — +1 RETRIEVER, instant research
+ *   1: SIEGE_1    — +1 SIEGE,     instant research
+ * Both instant so a single enter_sim() turn floats both into the queue
+ * without needing a research-turn delay. */
+static const char TEST_CREEP_SPAWN_ORDER_CFG[] =
+    "creep RETRIEVER\n"
+    "  code            R\n"
+    "  hp              20\n"
+    "  can_carry_flag  1\n"
+    "  spawn_order     2\n"
+
+    "creep SIEGE\n"
+    "  code            S\n"
+    "  hp              40\n"
+    "  melee_damage    5\n"
+    "  spawn_order     1\n"
+
+    "upgrade RETRIEVER_1\n"
+    "  cost            10\n"
+    "  research_turns  0\n"
+    "  spawn           RETRIEVER 1\n"
+    "  description     +1 Retriever\n"
+
+    "upgrade SIEGE_1\n"
+    "  cost            10\n"
+    "  research_turns  0\n"
+    "  spawn           SIEGE 1\n"
+    "  description     +1 Siege\n";
+
 /* BANANA fixture for test_banana_creep_carries_and_attacks. A single
  * upgrade spawns 1 creep that both carries the flag (can_carry_flag=1)
  * AND damages adjacent enemy towers (melee_damage > 0). Slot 0 is the

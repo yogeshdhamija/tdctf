@@ -214,6 +214,29 @@ static void test_error_cases(void) {
               "upgrade X\n  cost\n") != 0);
 }
 
+/* ── 7b. spawn_order parses as an int and defaults to 0. ────────────── */
+static void test_spawn_order(void) {
+    g_test = "spawn_order";
+    const char *src =
+        "creep FAST\n"
+        "  code F\n"
+        "  spawn_order 1\n"
+        "creep SLOW\n"
+        "  code S\n"
+        "  spawn_order 9\n"
+        "creep UNSET\n"
+        "  code U\n";
+    CHECK(creep_config_load_from_string(src) == 0);
+    const CreepCatalog *c = creep_config_get();
+    CHECK(c->types[creep_config_lookup_type("FAST")].spawn_order  == 1);
+    CHECK(c->types[creep_config_lookup_type("SLOW")].spawn_order  == 9);
+    CHECK(c->types[creep_config_lookup_type("UNSET")].spawn_order == 0);
+
+    /* Non-integer value is rejected like every other int field. */
+    CHECK(creep_config_load_from_string(
+              "creep X\n  code X\n  spawn_order banana\n") != 0);
+}
+
 /* ── 8. Declaration order is preserved as catalog index order, separately
  *      for types and upgrades. ────────────────────────────────────── */
 static void test_declaration_order(void) {
@@ -242,6 +265,7 @@ int main(void) {
     test_whitespace_and_comments();
     test_defaults();
     test_error_cases();
+    test_spawn_order();
     test_declaration_order();
     printf("%d assertions, %d failures\n", g_assertions, g_fail);
     return g_fail ? 1 : 0;

@@ -318,9 +318,11 @@ static void test_zero_research_turns_spawns_same_turn(void) {
     CHECK(s->players[PLAYER_RED].creep_upgrades[4].completed == 1);
     CHECK(s->players[PLAYER_RED].creep_upgrades[4].turns_remaining == 0);
 
-    /* Enter sim THIS turn — creeps must spawn at start of the simulation,
-     * matching the tower build_turns=0 same-turn-active semantic. */
+    /* Enter sim THIS turn — creeps must enter the spawn queue at the start
+     * of simulation, matching the tower build_turns=0 same-turn-active
+     * semantic. One sim tick later the queue head pops onto the map. */
     enter_sim();
+    step_ticks(1);
     CHECK(count_creeps(PLAYER_RED, game_creep_type_id("RETRIEVER")) == 1);
 }
 
@@ -342,8 +344,10 @@ static void test_completed_upgrade_spawns_retriever(void) {
     CHECK(count_creeps(PLAYER_RED, game_creep_type_id("RETRIEVER")) == 0);
     run_sim_to_completion();
 
-    /* Turn 3: upgrade is complete → 1 retriever spawns at start_simulation. */
+    /* Turn 3: upgrade is complete → 1 retriever enters the spawn queue and
+     * appears on the first sim tick. */
     enter_sim();
+    step_ticks(1);
     CHECK(count_creeps(PLAYER_RED, game_creep_type_id("RETRIEVER")) == 1);
     const Thing *r = find_creep(PLAYER_RED, game_creep_type_id("RETRIEVER"));
     CHECK(r != NULL);
@@ -534,9 +538,10 @@ static void test_siege_attacks_tower(void) {
     game_buy_creep_upgrade(1);     /* BLUE +2 siege, research_turns=1 */
     game_lock_in();                /* → SIMULATE turn 1 */
     run_sim_to_completion();
-    /* Turn 2: 2 BLUE siege creeps spawn at (25,15). They walk left and
-     * eventually adjacent siege creeps will hit the blocker. */
+    /* Turn 2: 2 BLUE siege creeps queue up. They spawn one per tick at
+     * (25,15), forming a line, and walk left toward the blocker. */
     enter_sim();
+    step_ticks(2);
     CHECK(count_creeps(PLAYER_BLUE, game_creep_type_id("SIEGE")) == 2);
 
     /* Step enough ticks for the siege creeps to approach. ~20 ticks of
@@ -682,7 +687,8 @@ static void test_banana_creep_carries_and_attacks(void) {
     game_buy_creep_upgrade(0);     /* BLUE: BANANA upgrade, research_turns=1 */
     game_lock_in();                /* → SIMULATE turn 1 (no creeps yet) */
     run_sim_to_completion();
-    enter_sim();                   /* SIMULATE turn 2 — BANANA spawns */
+    enter_sim();                   /* SIMULATE turn 2 — BANANA queued */
+    step_ticks(1);                 /* queue head pops onto the map */
 
     int banana_type = game_creep_type_id("BANANA");
     CHECK(count_creeps(PLAYER_BLUE, banana_type) == 1);
@@ -699,6 +705,64 @@ static void test_banana_creep_carries_and_attacks(void) {
     }
     CHECK(saw_damage);
     CHECK(saw_pickup);
+}
+
+/* ── 17b. Spawn ordering: queue sorted by creep type's spawn_order ────── */
+
+/* TEST_CREEP_SPAWN_ORDER_CFG declares RETRIEVER first (spawn_order 2) and
+ * SIEGE second (spawn_order 1). Both upgrades are instant. We buy
+ * RETRIEVER first (slot 0) then SIEGE (slot 1), so without sorting the
+ * queue order would be [R, S] (declaration-order push). Sorting by
+ * spawn_order produces [S, R], so tick 1 spawns SIEGE before tick 2's
+ * RETRIEVER — proving the sort key actually controls the order. */
+static void test_spawn_order_controls_queue(void) {
+    g_test = "spawn_order_controls_queue";
+    game_init_with_configs_and_map(TEST_TOWERS_CFG, TEST_CREEP_SPAWN_ORDER_CFG, TEST_MAP_CFG);
+    game_buy_creep_upgrade(0); /* RETRIEVER_1 (spawn_order 2) */
+    game_buy_creep_upgrade(1); /* SIEGE_1     (spawn_order 1) */
+    enter_sim();
+
+    int rt = game_creep_type_id("RETRIEVER");
+    int sg = game_creep_type_id("SIEGE");
+
+    /* After the first sim tick exactly one creep — SIEGE — is on the map. */
+    step_ticks(1);
+    CHECK(count_creeps(PLAYER_RED, sg) == 1);
+    CHECK(count_creeps(PLAYER_RED, rt) == 0);
+
+    /* After the second tick the RETRIEVER joins. */
+    step_ticks(1);
+    CHECK(count_creeps(PLAYER_RED, sg) == 1);
+    CHECK(count_creeps(PLAYER_RED, rt) == 1);
+}
+
+/* ── 17c. Spawn-in-a-line: one creep per tick, queue drains over time ──── */
+
+/* When several creeps are queued, they pop one-per-tick rather than all
+ * appearing on the spawn cell at tick 0. Setup: 2 SIEGE creeps (the
+ * SIEGE_2 upgrade) with 1 turn of research, then burn that turn so the
+ * upgrade is live for the following sim. */
+static void test_creeps_spawn_one_per_tick(void) {
+    g_test = "creeps_spawn_one_per_tick";
+    game_init_with_configs_and_map(TEST_TOWERS_CFG, TEST_CREEP_UPGRADES_CFG, TEST_MAP_CFG);
+    game_lock_in();              /* → PLAN_BLUE */
+    game_buy_creep_upgrade(1);   /* BLUE SIEGE_2 (+2 siege, 1 turn research) */
+    game_lock_in();              /* → SIMULATE turn 1 (research running) */
+    run_sim_to_completion();
+    enter_sim();                 /* → SIMULATE turn 2: 2 siege queued */
+
+    int sg = game_creep_type_id("SIEGE");
+    /* Tick 0 invocation pops 1 siege; tick 1 pops the second. No tick is
+     * allowed to spawn both. */
+    CHECK(count_creeps(PLAYER_BLUE, sg) == 0);
+    step_ticks(1);
+    CHECK(count_creeps(PLAYER_BLUE, sg) == 1);
+    step_ticks(1);
+    CHECK(count_creeps(PLAYER_BLUE, sg) == 2);
+
+    /* And once the queue is drained, no further creeps appear. */
+    step_ticks(2);
+    CHECK(count_creeps(PLAYER_BLUE, sg) == 2);
 }
 
 /* ── 18. Placement validity ──────────────────────────────────────────── */
@@ -753,6 +817,8 @@ int main(void) {
     test_win_condition();
     test_flag_drop_on_death();
     test_banana_creep_carries_and_attacks();
+    test_spawn_order_controls_queue();
+    test_creeps_spawn_one_per_tick();
     test_placement_validity();
     printf("%d assertions, %d failures\n", g_assertions, g_fail);
     return g_fail ? 1 : 0;
