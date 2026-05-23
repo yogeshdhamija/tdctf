@@ -19,7 +19,11 @@
 #define SIM_END_HOLD_FRAMES 90
 
 typedef enum { PLAYER_RED = 0, PLAYER_BLUE = 1 } PlayerID;
-typedef enum { PHASE_PLAN_RED, PHASE_PLAN_BLUE, PHASE_SIMULATE, PHASE_GAME_OVER } Phase;
+/* PHASE_PRE_SIM sits between PLAN_BLUE and SIMULATE: both players have
+ * locked in, but the sim hasn't started — instead the screen offers a
+ * choice of whose view to watch the simulation from. game_choose_sim_view
+ * commits the choice and kicks off SIMULATE. */
+typedef enum { PHASE_PLAN_RED, PHASE_PLAN_BLUE, PHASE_PRE_SIM, PHASE_SIMULATE, PHASE_GAME_OVER } Phase;
 
 typedef enum { THING_NONE = 0, THING_TOWER, THING_CREEP } ThingType;
 
@@ -249,7 +253,9 @@ int              game_creep_active_vision(PlayerID owner, CreepType t);
  * max(|cx-ux|,|cy-uy|) <= unit_vision. */
 int              game_tower_vision(TowerType t, int level);
 int              game_fog_visible_at(PlayerID viewer, int x, int y);
-void             game_toggle_sim_viewer(void);
+/* Commit a viewer choice from PHASE_PRE_SIM and start the simulation.
+ * No-op if not in PHASE_PRE_SIM. */
+void             game_choose_sim_view(PlayerID viewer);
 
 /* Creep upgrade catalog accessors. Per-player dynamic state (purchased /
  * completed / turns_remaining) lives on Player.creep_upgrades[idx]. */

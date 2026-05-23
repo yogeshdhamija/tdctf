@@ -28,8 +28,12 @@ static void step_ticks(int n) {
 }
 
 static void enter_sim(void) {
+    /* Both lock-ins land us in PHASE_PRE_SIM; the viewer choice commits
+     * to a perspective and kicks off the actual sim. Tests don't care
+     * which viewer, so default to RED. */
     game_lock_in();
     game_lock_in();
+    game_choose_sim_view(PLAYER_RED);
 }
 
 /* Advance frames until we're back in the PLAN_RED phase (i.e. the current
@@ -81,7 +85,13 @@ static void test_phase_transitions(void) {
     CHECK(game_planning_player() == PLAYER_BLUE);
 
     game_lock_in();
+    /* Both lock-ins hold the game in PRE_SIM until the player picks a
+     * viewer — the sim doesn't auto-start. */
+    CHECK(s->phase == PHASE_PRE_SIM);
+
+    game_choose_sim_view(PLAYER_BLUE);
     CHECK(s->phase == PHASE_SIMULATE);
+    CHECK(s->sim_viewer == PLAYER_BLUE);
 
     /* No creeps spawn (no upgrades purchased), sim ends quickly and we
      * roll over into turn 2 / PLAN_RED. */
@@ -440,6 +450,7 @@ static void test_gunner_damages_creep(void) {
     game_lock_in(); /* → PLAN_BLUE */
     game_buy_creep_upgrade(0); /* BLUE +1 retriever */
     game_lock_in(); /* → SIMULATE turn 1 (no creep yet) */
+    game_choose_sim_view(PLAYER_RED);
     run_sim_to_completion();
 
     /* Turn 2: BLUE retriever spawns at (29,10) and walks west to (4,10),
@@ -480,6 +491,7 @@ static void test_tower_crit_uses_crit_dmg(void) {
     game_lock_in();              /* → PLAN_BLUE */
     game_buy_creep_upgrade(0);   /* BLUE +1 retriever, 1 turn research */
     game_lock_in();              /* → SIMULATE turn 1 (no creeps) */
+    game_choose_sim_view(PLAYER_RED);
     run_sim_to_completion();
     enter_sim();                 /* SIMULATE turn 2 */
 
@@ -530,6 +542,7 @@ static void test_tower_targets_creep_closest_to_flag(void) {
     game_lock_in();              /* PLAN_RED → PLAN_BLUE */
     game_buy_creep_upgrade(2);   /* RETRIEVER_2X */
     game_lock_in();              /* → SIMULATE turn 1 (research running) */
+    game_choose_sim_view(PLAYER_RED);
     run_sim_to_completion();
     enter_sim();                 /* → SIMULATE turn 2 (research finishes at end) */
     run_sim_to_completion();
@@ -588,6 +601,7 @@ static void test_slammer_slows_creep(void) {
     game_lock_in();           /* PLAN_RED → PLAN_BLUE */
     game_buy_creep_upgrade(0);
     game_lock_in();           /* → SIMULATE turn 3 (upgrade not yet complete) */
+    game_choose_sim_view(PLAYER_RED);
     run_sim_to_completion();
     /* Turn 4: retriever spawns at (29,10), walks west then south toward
      * (4,15) — the slammer at (4,14) is in range as the creep approaches.
@@ -625,6 +639,7 @@ static void test_siege_attacks_tower(void) {
     game_lock_in();                /* → PLAN_BLUE */
     game_buy_creep_upgrade(1);     /* BLUE +2 siege, research_turns=1 */
     game_lock_in();                /* → SIMULATE turn 1 */
+    game_choose_sim_view(PLAYER_RED);
     run_sim_to_completion();
     /* Turn 2: 2 BLUE siege creeps queue up. They spawn one per tick at
      * (25,15), forming a line, and walk left toward the blocker. */
@@ -655,6 +670,7 @@ static void test_flag_pickup(void) {
     game_lock_in();              /* → PLAN_BLUE */
     game_buy_creep_upgrade(0);
     game_lock_in();              /* → SIMULATE turn 1 */
+    game_choose_sim_view(PLAYER_RED);
     run_sim_to_completion();
     enter_sim();                 /* SIMULATE turn 2 */
 
@@ -686,6 +702,7 @@ static void test_win_condition(void) {
     game_lock_in();              /* → PLAN_BLUE */
     game_buy_creep_upgrade(0);
     game_lock_in();              /* → SIMULATE turn 1 */
+    game_choose_sim_view(PLAYER_RED);
     run_sim_to_completion();
     enter_sim();                 /* SIMULATE turn 2 */
 
@@ -728,6 +745,7 @@ static void test_flag_drop_on_death(void) {
     game_lock_in();              /* → PLAN_BLUE */
     game_buy_creep_upgrade(0);
     game_lock_in();              /* → SIMULATE turn 1 (no creeps yet) */
+    game_choose_sim_view(PLAYER_RED);
     run_sim_to_completion();
     enter_sim();                 /* SIMULATE turn 2 */
 
@@ -774,6 +792,7 @@ static void test_banana_creep_carries_and_attacks(void) {
     game_lock_in();                /* → PLAN_BLUE */
     game_buy_creep_upgrade(0);     /* BLUE: BANANA upgrade, research_turns=1 */
     game_lock_in();                /* → SIMULATE turn 1 (no creeps yet) */
+    game_choose_sim_view(PLAYER_RED);
     run_sim_to_completion();
     enter_sim();                   /* SIMULATE turn 2 — BANANA queued */
     step_ticks(1);                 /* queue head pops onto the map */
@@ -836,6 +855,7 @@ static void test_creeps_spawn_one_per_tick(void) {
     game_lock_in();              /* → PLAN_BLUE */
     game_buy_creep_upgrade(1);   /* BLUE SIEGE_2 (+2 siege, 1 turn research) */
     game_lock_in();              /* → SIMULATE turn 1 (research running) */
+    game_choose_sim_view(PLAYER_RED);
     run_sim_to_completion();
     enter_sim();                 /* → SIMULATE turn 2: 2 siege queued */
 
@@ -1060,16 +1080,26 @@ static void test_fog_creep_memory_survives_sim_end(void) {
     CHECK(found);
 }
 
-/* sim_viewer toggle flips RED ↔ BLUE. Initialised to RED. */
-static void test_fog_sim_viewer_toggle(void) {
-    g_test = "fog_sim_viewer_toggle";
+/* The PRE_SIM viewer choice commits to a sim_viewer and starts the sim.
+ * No-op outside PRE_SIM. */
+static void test_fog_choose_sim_view(void) {
+    g_test = "fog_choose_sim_view";
     game_init_with_configs_and_map(TEST_TOWERS_CFG, TEST_CREEP_UPGRADES_CFG, TEST_MAP_CFG);
     const GameState *s = game_get_state();
     CHECK(s->sim_viewer == PLAYER_RED);
-    game_toggle_sim_viewer();
-    CHECK(s->sim_viewer == PLAYER_BLUE);
-    game_toggle_sim_viewer();
+
+    /* Outside PRE_SIM the call is a no-op. */
+    game_choose_sim_view(PLAYER_BLUE);
+    CHECK(s->phase == PHASE_PLAN_RED);
     CHECK(s->sim_viewer == PLAYER_RED);
+
+    /* Walk into PRE_SIM, then commit. */
+    game_lock_in();
+    game_lock_in();
+    CHECK(s->phase == PHASE_PRE_SIM);
+    game_choose_sim_view(PLAYER_BLUE);
+    CHECK(s->phase == PHASE_SIMULATE);
+    CHECK(s->sim_viewer == PLAYER_BLUE);
 }
 
 /* ── main ─────────────────────────────────────────────────────────── */
@@ -1107,7 +1137,7 @@ int main(void) {
     test_fog_completed_tower_visible();
     test_fog_upgrade_is_silent();
     test_fog_creep_memory_survives_sim_end();
-    test_fog_sim_viewer_toggle();
+    test_fog_choose_sim_view();
     printf("%d assertions, %d failures\n", g_assertions, g_fail);
     return g_fail ? 1 : 0;
 }

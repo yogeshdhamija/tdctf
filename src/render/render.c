@@ -65,9 +65,12 @@ void render_frame(const GameState *gs) {
     char buf[96];
 
     /* Viewer for fog-of-war filtering:
-     *   PLAN_RED  → RED
-     *   PLAN_BLUE → BLUE
-     *   SIMULATE / GAME_OVER → gs->sim_viewer (toggle button) */
+     *   PLAN_RED                 → RED
+     *   PLAN_BLUE                → BLUE
+     *   PRE_SIM / SIMULATE /
+     *   GAME_OVER                → gs->sim_viewer (chosen via the
+     *                              "View RED sim" / "View BLUE sim"
+     *                              buttons at PRE_SIM time) */
     if (gs->phase == PHASE_PLAN_BLUE) g_viewer = PLAYER_BLUE;
     else if (gs->phase == PHASE_PLAN_RED) g_viewer = PLAYER_RED;
     else g_viewer = (gs->sim_viewer == PLAYER_BLUE) ? PLAYER_BLUE : PLAYER_RED;
@@ -309,6 +312,7 @@ void render_frame(const GameState *gs) {
     uint32_t phase_col = 0xCCCCCC;
     if (gs->phase == PHASE_PLAN_RED)  { phase_str = "PLAN: RED";  phase_col = player_color(PLAYER_RED); }
     if (gs->phase == PHASE_PLAN_BLUE) { phase_str = "PLAN: BLUE"; phase_col = player_color(PLAYER_BLUE); }
+    if (gs->phase == PHASE_PRE_SIM)   { phase_str = "CHOOSE VIEW"; phase_col = 0xFFCC44; }
     if (gs->phase == PHASE_SIMULATE)  { phase_str = "SIMULATING"; phase_col = 0xFFCC44; }
     if (gs->phase == PHASE_GAME_OVER) { phase_str = "GAME OVER";  phase_col = 0xFFFFFF; }
     plat_draw_text(sx + 10, line, phase_str, phase_col);
@@ -422,12 +426,22 @@ void render_frame(const GameState *gs) {
                 }
             }
         }
+    } else if (gs->phase == PHASE_PRE_SIM) {
+        /* Two committal buttons — clicking either sets sim_viewer and
+         * kicks off the actual simulation. */
+        plat_draw_text(sx + 10, line, "Watch the sim as:", 0xCCCCCC);
+        line += 20;
+        draw_button(BTN_START_SIM_AS_RED,  sx + 10, line, SIDEBAR_W - 20, 24,
+                    "View RED sim", 0, 1);
+        line += 28;
+        draw_button(BTN_START_SIM_AS_BLUE, sx + 10, line, SIDEBAR_W - 20, 24,
+                    "View BLUE sim", 0, 1);
     } else if (gs->phase == PHASE_SIMULATE) {
         snprintf(buf, sizeof(buf), "Tick %d / %d", gs->sim_tick, SIM_TICKS_PER_TURN);
         plat_draw_text(sx + 10, line, buf, 0xCCCCCC);
         line += 20;
         snprintf(buf, sizeof(buf), "View: %s", g_viewer == PLAYER_RED ? "RED" : "BLUE");
-        draw_button(BTN_TOGGLE_VIEWER, sx + 10, line, SIDEBAR_W - 20, 22, buf, 0, 1);
+        plat_draw_text(sx + 10, line, buf, player_color(g_viewer));
     } else if (gs->phase == PHASE_GAME_OVER) {
         snprintf(buf, sizeof(buf), "%s WINS!",
                  gs->winner == PLAYER_RED ? "RED" : "BLUE");

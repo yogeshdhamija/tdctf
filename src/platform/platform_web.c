@@ -203,11 +203,12 @@ void on_click(int px, int py) {
         return;
     }
     switch (btn) {
-        case BTN_LOCK_IN:         game_lock_in();          push_current_snapshot(); break;
-        case BTN_UPGRADE_TOWER:   game_upgrade_selected();                          break;
-        case BTN_DESTROY_TOWER:   game_destroy_selected();                          break;
-        case BTN_RESTART:         game_init();             push_current_snapshot(); break;
-        case BTN_TOGGLE_VIEWER:   game_toggle_sim_viewer();                         break;
+        case BTN_LOCK_IN:            game_lock_in();                        push_current_snapshot(); break;
+        case BTN_UPGRADE_TOWER:      game_upgrade_selected();                                        break;
+        case BTN_DESTROY_TOWER:      game_destroy_selected();                                        break;
+        case BTN_RESTART:            game_init();                           push_current_snapshot(); break;
+        case BTN_START_SIM_AS_RED:   game_choose_sim_view(PLAYER_RED);      push_current_snapshot(); break;
+        case BTN_START_SIM_AS_BLUE:  game_choose_sim_view(PLAYER_BLUE);     push_current_snapshot(); break;
         default: break;
     }
 }

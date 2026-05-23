@@ -365,8 +365,12 @@ int game_fog_visible_at(PlayerID viewer, int x, int y) {
     return s.views[viewer].vis_now[x][y] ? 1 : 0;
 }
 
-void game_toggle_sim_viewer(void) {
-    s.sim_viewer = (s.sim_viewer == PLAYER_RED) ? PLAYER_BLUE : PLAYER_RED;
+static void start_simulation(void);
+
+void game_choose_sim_view(PlayerID viewer) {
+    if (s.phase != PHASE_PRE_SIM) return;
+    s.sim_viewer = (viewer == PLAYER_BLUE) ? PLAYER_BLUE : PLAYER_RED;
+    start_simulation();
 }
 
 /* ── Creep upgrade init ─────────────────────────────────── */
@@ -928,8 +932,16 @@ static void end_simulation(void) {
 }
 
 void game_lock_in(void) {
-    if (s.phase == PHASE_PLAN_RED)  { s.placement_intent = -1; s.selected_x = -1; s.selected_y = -1; s.phase = PHASE_PLAN_BLUE; }
-    else if (s.phase == PHASE_PLAN_BLUE) { s.placement_intent = -1; s.selected_x = -1; s.selected_y = -1; start_simulation(); }
+    if (s.phase == PHASE_PLAN_RED) {
+        s.placement_intent = -1; s.selected_x = -1; s.selected_y = -1;
+        s.phase = PHASE_PLAN_BLUE;
+    } else if (s.phase == PHASE_PLAN_BLUE) {
+        /* Both players have committed. Hand off to the viewer-choice
+         * phase — the sim doesn't actually start until the user picks
+         * whose perspective to watch via game_choose_sim_view. */
+        s.placement_intent = -1; s.selected_x = -1; s.selected_y = -1;
+        s.phase = PHASE_PRE_SIM;
+    }
 }
 
 static int any_creeps_alive(void) {
@@ -967,6 +979,7 @@ static char phase_to_char(Phase p) {
     switch (p) {
         case PHASE_PLAN_RED:  return 'R';
         case PHASE_PLAN_BLUE: return 'B';
+        case PHASE_PRE_SIM:   return 'V';
         case PHASE_SIMULATE:  return 'S';
         case PHASE_GAME_OVER: return 'O';
     }
@@ -976,6 +989,7 @@ static char phase_to_char(Phase p) {
 static Phase phase_from_char(char c) {
     switch (c) {
         case 'B': return PHASE_PLAN_BLUE;
+        case 'V': return PHASE_PRE_SIM;
         case 'S': return PHASE_SIMULATE;
         case 'O': return PHASE_GAME_OVER;
         default:  return PHASE_PLAN_RED;

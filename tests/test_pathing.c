@@ -35,15 +35,17 @@ static const char *g_test;
 static void test_retriever_walks_full_loop_and_wins(void) {
     g_test = "retriever_walks_full_loop_and_wins";
     game_init();
-    game_buy_creep_upgrade(0);   /* RED +1 retriever, 1 turn research */
-    game_lock_in();              /* → PLAN_BLUE */
-    game_lock_in();              /* → SIMULATE turn 1 (upgrade still researching) */
+    game_buy_creep_upgrade(0);              /* RED +1 retriever, 1 turn research */
+    game_lock_in();                         /* → PLAN_BLUE */
+    game_lock_in();                         /* → PRE_SIM   */
+    game_choose_sim_view(PLAYER_RED);       /* → SIMULATE turn 1 (upgrade still researching) */
     /* Drain the quiet sim. */
     for (int i = 0; i < SIM_TICKS_PER_TURN * SIM_FRAMES_PER_TICK + 200; i++) {
         game_frame();
         if (game_get_state()->phase == PHASE_PLAN_RED) break;
     }
-    game_lock_in(); game_lock_in(); /* → SIMULATE turn 2: retriever spawns */
+    game_lock_in(); game_lock_in();
+    game_choose_sim_view(PLAYER_RED);       /* → SIMULATE turn 2: retriever spawns */
     for (int i = 0; i < SIM_TICKS_PER_TURN * SIM_FRAMES_PER_TICK + 200; i++) {
         game_frame();
         if (game_get_state()->phase == PHASE_GAME_OVER) break;

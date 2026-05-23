@@ -85,6 +85,17 @@ static void scan_buttons(void) {
 
 static int present(int id) { return g_present[id]; }
 
+/* Walk the game from PHASE_PLAN_BLUE (sometimes from PLAN_RED) all the
+ * way to PHASE_SIMULATE under the new flow: two lock-ins land in
+ * PRE_SIM, then game_choose_sim_view commits the viewer and starts the
+ * sim. Render tests use this anywhere they need to be in SIMULATE. */
+static void enter_sim_as(PlayerID viewer) {
+    /* Caller is responsible for being in PLAN_RED or PLAN_BLUE. */
+    if (game_get_state()->phase == PHASE_PLAN_RED)  game_lock_in();
+    if (game_get_state()->phase == PHASE_PLAN_BLUE) game_lock_in();
+    game_choose_sim_view(viewer);
+}
+
 /* ── tests ──────────────────────────────────────────────────────────── */
 
 /* The grid area (left of the sidebar) has no buttons in any phase —
@@ -216,12 +227,14 @@ static void test_enemy_tower_selected_no_upgrade_destroy(void) {
     CHECK(!present(BTN_DESTROY_TOWER));
 }
 
-/* During SIMULATE the sidebar shows tick text but no clickable elements. */
+/* During SIMULATE the sidebar shows tick text but no clickable elements —
+ * the viewer was already committed at PRE_SIM, so there's nothing to push. */
 static void test_simulation_phase_no_buttons(void) {
     g_test = "simulation_phase_no_buttons";
     game_init_with_configs(TEST_TOWERS_CFG, TEST_CREEP_UPGRADES_CFG);
-    game_lock_in(); /* → PLAN_BLUE */
-    game_lock_in(); /* → SIMULATE  */
+    game_lock_in();                        /* → PLAN_BLUE */
+    game_lock_in();                        /* → PRE_SIM   */
+    game_choose_sim_view(PLAYER_RED);      /* → SIMULATE  */
 
     render_frame(game_get_state());
     scan_buttons();
@@ -232,8 +245,27 @@ static void test_simulation_phase_no_buttons(void) {
     CHECK(!present(BTN_UPGRADE_TOWER));
     CHECK(!present(BTN_DESTROY_TOWER));
     CHECK(!present(BTN_RESTART));
-    /* Toggle button IS hittable during sim — it's the only sidebar control. */
-    CHECK(present(BTN_TOGGLE_VIEWER));
+    CHECK(!present(BTN_START_SIM_AS_RED));
+    CHECK(!present(BTN_START_SIM_AS_BLUE));
+}
+
+/* After BLUE locks in, the sim doesn't auto-start — instead the sidebar
+ * offers a choice of whose vision to watch from. Both buttons are
+ * hittable; planning controls are gone. */
+static void test_pre_sim_offers_view_choice(void) {
+    g_test = "pre_sim_offers_view_choice";
+    game_init_with_configs(TEST_TOWERS_CFG, TEST_CREEP_UPGRADES_CFG);
+    game_lock_in(); /* → PLAN_BLUE */
+    game_lock_in(); /* → PRE_SIM   */
+    CHECK(game_get_state()->phase == PHASE_PRE_SIM);
+
+    render_frame(game_get_state());
+    scan_buttons();
+    CHECK(present(BTN_START_SIM_AS_RED));
+    CHECK(present(BTN_START_SIM_AS_BLUE));
+    CHECK(!present(BTN_LOCK_IN));
+    for (int i = 0; i < game_tower_count(); i++)
+        CHECK(!present(BTN_PLACE_TOWER_BASE + i));
 }
 
 /* Fog of war: an enemy tower outside the viewer's vision must not draw
@@ -296,17 +328,20 @@ static void test_stacked_creep_count_badge(void) {
     game_init_with_configs_and_map(TEST_TOWERS_CFG, TEST_CREEP_UPGRADES_CFG, TEST_MAP_CFG);
     game_lock_in();                 /* → PLAN_BLUE */
     game_buy_creep_upgrade(2);      /* +2 retrievers, 2 turn research */
-    game_lock_in();                 /* → SIMULATE turn 1 (no creeps yet) */
+    /* Drain two empty sims to let the upgrade research land. The BLUE
+     * viewer is required for the badge to render under fog (the BLUE
+     * creeps will be in BLUE's view), so pick BLUE at each PRE_SIM. */
+    enter_sim_as(PLAYER_BLUE);
     for (int i = 0; i < SIM_TICKS_PER_TURN * SIM_FRAMES_PER_TICK + 200; i++) {
         game_frame();
         if (game_get_state()->phase == PHASE_PLAN_RED) break;
     }
-    game_lock_in(); game_lock_in(); /* → SIMULATE turn 2 (still no creeps) */
+    enter_sim_as(PLAYER_BLUE);
     for (int i = 0; i < SIM_TICKS_PER_TURN * SIM_FRAMES_PER_TICK + 200; i++) {
         game_frame();
         if (game_get_state()->phase == PHASE_PLAN_RED) break;
     }
-    game_lock_in(); game_lock_in(); /* → SIMULATE turn 3 */
+    enter_sim_as(PLAYER_BLUE);     /* turn 3: retrievers spawn */
     /* Two ticks pops both retrievers off the spawn queue; they end up at
      * different cells along the path. */
     for (int i = 0; i < 2 * SIM_FRAMES_PER_TICK; i++) game_frame();
@@ -325,10 +360,9 @@ static void test_stacked_creep_count_badge(void) {
     }
     CHECK(seen == 2);
 
-    /* During SIMULATE the viewer defaults to RED. Toggle to BLUE so the
-     * BLUE creeps we just snapped together fall inside g_viewer's view
-     * and the crowding badge actually renders. */
-    game_toggle_sim_viewer();
+    /* sim_viewer is already BLUE thanks to enter_sim_as(PLAYER_BLUE), so
+     * the BLUE creeps we just snapped together fall inside g_viewer's
+     * view and the crowding badge actually renders. */
     reset_text_log();
     render_frame(s);
     int x_lo = crowd_x * CELL_SIZE, x_hi = x_lo + CELL_SIZE;
@@ -355,12 +389,12 @@ static void test_single_creep_no_badge(void) {
     game_init_with_configs(TEST_TOWERS_CFG, TEST_CREEP_UPGRADES_CFG);
     game_lock_in();                 /* → PLAN_BLUE */
     game_buy_creep_upgrade(0);      /* +1 retriever */
-    game_lock_in();                 /* → SIMULATE turn 1 (no creeps yet) */
+    enter_sim_as(PLAYER_BLUE);      /* SIMULATE turn 1 (no creeps yet) */
     for (int i = 0; i < SIM_TICKS_PER_TURN * SIM_FRAMES_PER_TICK + 200; i++) {
         game_frame();
         if (game_get_state()->phase == PHASE_PLAN_RED) break;
     }
-    game_lock_in(); game_lock_in(); /* → SIMULATE turn 2: 1 retriever spawns */
+    enter_sim_as(PLAYER_BLUE);      /* SIMULATE turn 2: 1 retriever spawns */
 
     reset_text_log();
     render_frame(game_get_state());
@@ -383,13 +417,13 @@ static void test_game_over_shows_restart(void) {
      * to BLUE's receptacle. */
     game_lock_in();              /* → PLAN_BLUE */
     game_buy_creep_upgrade(0);   /* +1 BLUE retriever */
-    game_lock_in();              /* → SIMULATE turn 1 (no creeps) */
+    enter_sim_as(PLAYER_RED);    /* SIMULATE turn 1 (no creeps) */
     /* Drain turn 1 quietly. */
     for (int i = 0; i < SIM_TICKS_PER_TURN * SIM_FRAMES_PER_TICK + 200; i++) {
         game_frame();
         if (game_get_state()->phase == PHASE_PLAN_RED) break;
     }
-    game_lock_in(); game_lock_in(); /* → SIMULATE turn 2 */
+    enter_sim_as(PLAYER_RED);    /* SIMULATE turn 2 */
     /* Run until BLUE wins. */
     for (int i = 0; i < SIM_TICKS_PER_TURN * SIM_FRAMES_PER_TICK; i++) {
         game_frame();
@@ -415,6 +449,7 @@ int main(void) {
     test_selected_tower_shows_build_turns();
     test_enemy_tower_selected_no_upgrade_destroy();
     test_simulation_phase_no_buttons();
+    test_pre_sim_offers_view_choice();
     test_fog_hides_enemy_tower_glyph();
     test_fog_masks_enemy_sidebar_resources();
     test_stacked_creep_count_badge();

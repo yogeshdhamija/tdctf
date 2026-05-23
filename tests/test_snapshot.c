@@ -246,10 +246,12 @@ static void test_simulate_phase_respawns_creeps(void) {
     mut->players[PLAYER_RED].creep_upgrades[0].completed = 1;
     mut->players[PLAYER_RED].creep_upgrades[0].turns_remaining = 0;
 
-    /* Get into PHASE_SIMULATE the regular way — both lock-ins. The 2nd
-     * one calls start_simulation, which builds the spawn queue. */
+    /* Get into PHASE_SIMULATE the regular way — both lock-ins land in
+     * PRE_SIM, then game_choose_sim_view kicks off start_simulation, which
+     * builds the spawn queue. */
     game_lock_in();
     game_lock_in();
+    game_choose_sim_view(PLAYER_RED);
     const GameState *s = game_get_state();
     CHECK(s->phase == PHASE_SIMULATE);
 
