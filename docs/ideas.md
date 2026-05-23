@@ -1,0 +1,4 @@
+- Hide other person's money
+- Enable double pickups
+- Make towers target "closest to flag" first
+- Make each creep have a "spawn order" (configurable), and have them spawn in a line.
