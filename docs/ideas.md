@@ -1,3 +1,2 @@
 - Hide other person's money
 - Enable double pickups
-- Make each creep have a "spawn order" (configurable), and have them spawn in a line.
