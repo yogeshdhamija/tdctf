@@ -48,6 +48,7 @@ static int set_level_field(TowerLevelStats *L, const char *key, const char *val)
     if (!strcmp(key, "income"))      return parse_int(val, &L->income);
     if (!strcmp(key, "crit_chance")) return parse_int(val, &L->crit_chance);
     if (!strcmp(key, "crit_dmg"))    return parse_int(val, &L->crit_dmg);
+    if (!strcmp(key, "vision"))      return parse_int(val, &L->vision);
     return -1;
 }
 

@@ -207,6 +207,7 @@ void on_click(int px, int py) {
         case BTN_UPGRADE_TOWER:   game_upgrade_selected();                          break;
         case BTN_DESTROY_TOWER:   game_destroy_selected();                          break;
         case BTN_RESTART:         game_init();             push_current_snapshot(); break;
+        case BTN_TOGGLE_VIEWER:   game_toggle_sim_viewer();                         break;
         default: break;
     }
 }

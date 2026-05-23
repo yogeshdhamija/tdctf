@@ -39,6 +39,14 @@ static uint32_t zone_color(ZoneType z) {
 static uint32_t player_color(PlayerID p)     { return p == PLAYER_RED ? 0xCC4444 : 0x4477CC; }
 static uint32_t player_color_dim(PlayerID p) { return p == PLAYER_RED ? 0x661818 : 0x182455; }
 
+/* Viewer derived from current phase/state by render_frame. Used by every
+ * entity-drawing loop to consult the right per-player PlayerView. */
+static PlayerID g_viewer;
+
+static int viewer_can_see(const GameState *gs, int x, int y) {
+    return gs->views[g_viewer].vis_now[x][y] ? 1 : 0;
+}
+
 static void draw_button(int id, int x, int y, int w, int h,
                         const char *label, int active, int enabled) {
     uint32_t fill   = enabled ? (active ? 0x445588 : 0x2A2A2A) : 0x1A1A1A;
@@ -56,9 +64,19 @@ void render_frame(const GameState *gs) {
     int gh = gs->grid_h * CELL_SIZE;
     char buf[96];
 
+    /* Viewer for fog-of-war filtering:
+     *   PLAN_RED  → RED
+     *   PLAN_BLUE → BLUE
+     *   SIMULATE / GAME_OVER → gs->sim_viewer (toggle button) */
+    if (gs->phase == PHASE_PLAN_BLUE) g_viewer = PLAYER_BLUE;
+    else if (gs->phase == PHASE_PLAN_RED) g_viewer = PLAYER_RED;
+    else g_viewer = (gs->sim_viewer == PLAYER_BLUE) ? PLAYER_BLUE : PLAYER_RED;
+
     plat_clear(0x111111);
 
-    /* Grid zones */
+    /* Grid zones — always drawn at full strength regardless of fog. Per
+     * game-design.md §6, terrain/zones/landmarks are "the empty map" the
+     * player always sees; fog only hides entities (towers, creeps). */
     for (int x = 0; x < gs->grid_w; x++)
         for (int y = 0; y < gs->grid_h; y++)
             plat_fill_rect(x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE,
@@ -99,31 +117,74 @@ void render_frame(const GameState *gs) {
         plat_draw_triangle(fx, fy, fx + 16, fy + 6, fx, fy + 12, col);
     }
 
-    /* Towers */
-    for (int i = 0; i < gs->thing_count; i++) {
-        const Thing *t = &gs->things[i];
-        if (t->tag != THING_TOWER || !t->alive) continue;
-        char code = game_tower_code(t->tower.type);
-        uint32_t col = (t->tower.build_turns > 0) ? player_color_dim(t->owner) : player_color(t->owner);
-        if (t->tower.build_turns > 0)
-            snprintf(buf, sizeof(buf), "%c%d*", code, t->tower.level);
-        else
-            snprintf(buf, sizeof(buf), "%c%d", code, t->tower.level);
-        plat_draw_text(t->x * CELL_SIZE + 7, t->y * CELL_SIZE + 8, buf, col);
-        if (t->hp < t->max_hp) {
-            int barw = (CELL_SIZE - 6) * t->hp / (t->max_hp > 0 ? t->max_hp : 1);
-            plat_fill_rect(t->x * CELL_SIZE + 3, t->y * CELL_SIZE + CELL_SIZE - 4,
-                           CELL_SIZE - 6, 2, 0x440000);
-            plat_fill_rect(t->x * CELL_SIZE + 3, t->y * CELL_SIZE + CELL_SIZE - 4,
-                           barw, 2, 0x44CC44);
+    /* Towers — single pass over the grid that honors fog. For each cell:
+     *   - own tower, any state: drawn live.
+     *   - enemy tower in vis_now:
+     *       * mid-initial-build → "?" placeholder (type withheld).
+     *       * mid-upgrade with prior known-level mem → render the prior
+     *         memorised level (the upgrade is silent).
+     *       * else → drawn live.
+     *   - cell out of vis_now: consult mem[x][y]. Render the snapshot
+     *     dimmed if it's a known tower, "?" dimmed if it was building.
+     *   - no tower live and no memory: nothing. */
+    for (int x = 0; x < gs->grid_w; x++) {
+        for (int y = 0; y < gs->grid_h; y++) {
+            int id = gs->grid[x][y].thing_id;
+            int has_live = (id >= 0 && gs->things[id].tag == THING_TOWER && gs->things[id].alive);
+            int visible = viewer_can_see(gs, x, y);
+            const FogTowerMemory *m = &gs->views[g_viewer].mem[x][y];
+            int px = x * CELL_SIZE, py = y * CELL_SIZE;
+
+            if (has_live) {
+                const Thing *t = &gs->things[id];
+                int own = (t->owner == g_viewer);
+                if (own || visible) {
+                    int building = t->tower.build_turns > 0;
+                    /* Enemy initial build: hide the type with a "?". */
+                    if (!own && building && t->tower.level == 1) {
+                        snprintf(buf, sizeof(buf), "?");
+                        plat_draw_text(px + 12, py + 8, buf, player_color_dim(t->owner));
+                        continue;
+                    }
+                    /* Enemy mid-upgrade with prior known level → show old. */
+                    if (!own && building && t->tower.level > 1 && m->occ == FOG_OCC_TOWER) {
+                        snprintf(buf, sizeof(buf), "%c%d", game_tower_code((TowerType)m->type), m->level);
+                        plat_draw_text(px + 7, py + 8, buf, player_color_dim((PlayerID)m->owner));
+                        continue;
+                    }
+                    /* Live (or own) draw. */
+                    char code = game_tower_code(t->tower.type);
+                    uint32_t col = building ? player_color_dim(t->owner) : player_color(t->owner);
+                    if (building) snprintf(buf, sizeof(buf), "%c%d*", code, t->tower.level);
+                    else          snprintf(buf, sizeof(buf), "%c%d",  code, t->tower.level);
+                    plat_draw_text(px + 7, py + 8, buf, col);
+                    if (t->hp < t->max_hp) {
+                        int barw = (CELL_SIZE - 6) * t->hp / (t->max_hp > 0 ? t->max_hp : 1);
+                        plat_fill_rect(px + 3, py + CELL_SIZE - 4, CELL_SIZE - 6, 2, 0x440000);
+                        plat_fill_rect(px + 3, py + CELL_SIZE - 4, barw, 2, 0x44CC44);
+                    }
+                    continue;
+                }
+                /* Enemy live tower the viewer can't see: fall through to
+                 * draw whatever the memory remembers. */
+            }
+            if (visible) continue;   /* in vision, no tower live → nothing */
+            if (m->occ == FOG_OCC_TOWER) {
+                snprintf(buf, sizeof(buf), "%c%d", game_tower_code((TowerType)m->type), m->level);
+                plat_draw_text(px + 7, py + 8, buf, player_color_dim((PlayerID)m->owner));
+            } else if (m->occ == FOG_OCC_BUILDING) {
+                snprintf(buf, sizeof(buf), "?");
+                plat_draw_text(px + 12, py + 8, buf, player_color_dim((PlayerID)m->owner));
+            }
         }
     }
 
-    /* Tower attack beams */
+    /* Tower attack beams: hide enemy beams whose source isn't visible. */
     for (int i = 0; i < gs->thing_count; i++) {
         const Thing *t = &gs->things[i];
         if (t->tag != THING_TOWER || !t->alive) continue;
         if (t->beam_ttl <= 0) continue;
+        if (t->owner != g_viewer && !viewer_can_see(gs, t->x, t->y)) continue;
         int x1 = t->x * CELL_SIZE + CELL_SIZE/2;
         int y1 = t->y * CELL_SIZE + CELL_SIZE/2;
         int x2 = t->last_target_x * CELL_SIZE + CELL_SIZE/2;
@@ -133,14 +194,19 @@ void render_frame(const GameState *gs) {
 
     /* Creeps. Visual differentiation: any creep type with melee_damage > 0
      * is rendered "heavy" (larger circle, dim color) — a generic stand-in
-     * for "fighter" creeps; everything else renders "light". This keeps
-     * arbitrary new creep types from the config readable without per-type
-     * art. */
+     * for "fighter" creeps; everything else renders "light".
+     *
+     * Fog filter: own creeps always shown; enemy creeps only if their cell
+     * is in vis_now. Creeps that the viewer once saw but are now out of
+     * vision (or dead) are drawn from creep_mem[i] as hollow "corpse"
+     * markers — that's the inspectable-corpse feature from §6. */
     static int creep_cnt[MAX_GRID_W][MAX_GRID_H][2][CREEP_TYPE_MAX_COUNT];
     memset(creep_cnt, 0, sizeof(creep_cnt));
     for (int i = 0; i < gs->thing_count; i++) {
         const Thing *t = &gs->things[i];
         if (t->tag != THING_CREEP || !t->alive) continue;
+        int own = (t->owner == g_viewer);
+        if (!own && !viewer_can_see(gs, t->x, t->y)) continue;
         creep_cnt[t->x][t->y][t->owner][t->creep.type]++;
         int heavy = game_creep_active_melee_damage(t->owner, t->creep.type) > 0;
         uint32_t col = heavy ? player_color_dim(t->owner) : player_color(t->owner);
@@ -156,6 +222,24 @@ void render_frame(const GameState *gs) {
             plat_draw_line(cx - 7, cy - 12, cx - 7, cy + 2, fcol);
             plat_draw_triangle(cx - 7, cy - 12, cx + 3, cy - 9, cx - 7, cy - 6, fcol);
         }
+    }
+
+    /* Corpses: every creep_mem entry whose live thing isn't currently
+     * drawn above gets a hollow-circle marker at its remembered cell.
+     * Covers both "creep moved out of vision" mid-sim and "creep died"
+     * post-sim — start_simulation wipes creep_mem so this only shows
+     * memories from the current round. */
+    for (int i = 0; i < MAX_THINGS; i++) {
+        const FogCreepMemory *cm = &gs->views[g_viewer].creep_mem[i];
+        if (!cm->valid) continue;
+        const Thing *t = (i < gs->thing_count) ? &gs->things[i] : NULL;
+        int live_visible = t && t->tag == THING_CREEP && t->alive &&
+                           ((t->owner == g_viewer) ||
+                            viewer_can_see(gs, t->x, t->y));
+        if (live_visible) continue;
+        int cx = cm->x * CELL_SIZE + CELL_SIZE/2;
+        int cy = cm->y * CELL_SIZE + CELL_SIZE/2;
+        plat_draw_circle(cx, cy, 5, player_color_dim((PlayerID)cm->owner));
     }
 
     /* Per-cell crowding badge: when more than one creep shares a cell the
@@ -236,15 +320,21 @@ void render_frame(const GameState *gs) {
         line += 32;
     }
 
-    /* Player blocks */
+    /* Player blocks. Enemy resources/income are masked under fog — the
+     * viewer doesn't get their opponent's exact economy. */
     for (int p = 0; p < 2; p++) {
         int current = (gs->phase == PHASE_PLAN_RED && p == PLAYER_RED) ||
                       (gs->phase == PHASE_PLAN_BLUE && p == PLAYER_BLUE);
         if (current)
             plat_fill_rect(sx + 4, line - 5, SIDEBAR_W - 8, 22, 0x2A2A40);
-        snprintf(buf, sizeof(buf), "%s  $%d  +%d",
-                 p == PLAYER_RED ? "RED" : "BLUE",
-                 gs->players[p].resources, gs->players[p].income_per_turn);
+        if ((PlayerID)p == g_viewer) {
+            snprintf(buf, sizeof(buf), "%s  $%d  +%d",
+                     p == PLAYER_RED ? "RED" : "BLUE",
+                     gs->players[p].resources, gs->players[p].income_per_turn);
+        } else {
+            snprintf(buf, sizeof(buf), "%s  $???  +??",
+                     p == PLAYER_RED ? "RED" : "BLUE");
+        }
         plat_draw_text(sx + 10, line, buf, player_color((PlayerID)p));
         line += 22;
     }
@@ -335,6 +425,9 @@ void render_frame(const GameState *gs) {
     } else if (gs->phase == PHASE_SIMULATE) {
         snprintf(buf, sizeof(buf), "Tick %d / %d", gs->sim_tick, SIM_TICKS_PER_TURN);
         plat_draw_text(sx + 10, line, buf, 0xCCCCCC);
+        line += 20;
+        snprintf(buf, sizeof(buf), "View: %s", g_viewer == PLAYER_RED ? "RED" : "BLUE");
+        draw_button(BTN_TOGGLE_VIEWER, sx + 10, line, SIDEBAR_W - 20, 22, buf, 0, 1);
     } else if (gs->phase == PHASE_GAME_OVER) {
         snprintf(buf, sizeof(buf), "%s WINS!",
                  gs->winner == PLAYER_RED ? "RED" : "BLUE");

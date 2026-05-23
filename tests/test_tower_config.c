@@ -119,6 +119,26 @@ static void test_levels_independent(void) {
     CHECK(t->level[1].income == 50 && t->level[1].range == 0);
 }
 
+/* ── Vision is a per-level stat; absent → 0, present → parsed value. ── */
+static void test_vision_field(void) {
+    g_test = "vision_field";
+    const char *src =
+        "tower SPOTTER\n"
+        "  code S\n"
+        "level SPOTTER 1\n"
+        "  cost 1\n"
+        "  hp 1\n"
+        "  vision 4\n"
+        "level SPOTTER 2\n"
+        "  cost 1\n"
+        "  hp 1\n";
+    CHECK(tower_config_load_from_string(src) == 0);
+    int i = tower_config_lookup("SPOTTER");
+    const TowerConfig *t = &tower_config_get()->towers[i];
+    CHECK(t->level[0].vision == 4);
+    CHECK(t->level[1].vision == 0);   /* default */
+}
+
 /* ── 5. Structural error cases reject loudly. ───────────────────────── */
 static void test_error_cases(void) {
     g_test = "error_cases";
@@ -188,6 +208,7 @@ int main(void) {
     test_whitespace_and_comments();
     test_combined_features();
     test_levels_independent();
+    test_vision_field();
     test_error_cases();
     test_declaration_order();
     printf("%d assertions, %d failures\n", g_assertions, g_fail);

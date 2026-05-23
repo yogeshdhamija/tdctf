@@ -937,6 +937,141 @@ static void test_placement_validity(void) {
     CHECK(s->grid[10][10].thing_id != -1);
 }
 
+/* ── Fog of war ─────────────────────────────────────────────────────── */
+
+/* Spawn cell is always visible to its owner, even with no other units. */
+static void test_fog_spawn_baseline(void) {
+    g_test = "fog_spawn_baseline";
+    game_init_with_configs_and_map(TEST_TOWERS_CFG, TEST_CREEP_UPGRADES_CFG, TEST_MAP_CFG);
+    CHECK(game_fog_visible_at(PLAYER_RED,  10, 8));        /* RED spawn  */
+    CHECK(game_fog_visible_at(PLAYER_BLUE, 19, 11));       /* BLUE spawn */
+    /* Cross-player: BLUE shouldn't see RED's spawn cell from nothing. */
+    CHECK(!game_fog_visible_at(PLAYER_BLUE, 10, 8));
+}
+
+/* Placing a tower expands the placer's vision in a Chebyshev box of its
+ * level vision; the enemy view is untouched. GUNNER L1 has vision=2 in the
+ * fixture, so placing at (12,8) illuminates (10..14, 6..10). */
+static void test_fog_tower_extends_vision(void) {
+    g_test = "fog_tower_extends_vision";
+    game_init_with_configs_and_map(TEST_TOWERS_CFG, TEST_CREEP_UPGRADES_CFG, TEST_MAP_CFG);
+    game_set_placement(game_tower_id("GUNNER"));
+    game_grid_click(12, 8);
+
+    /* Inside the (2 cell) box. */
+    CHECK(game_fog_visible_at(PLAYER_RED, 12, 8));
+    CHECK(game_fog_visible_at(PLAYER_RED, 14, 10));
+    CHECK(game_fog_visible_at(PLAYER_RED, 10, 6));
+    /* Just outside. */
+    CHECK(!game_fog_visible_at(PLAYER_RED, 15, 8));
+    CHECK(!game_fog_visible_at(PLAYER_RED, 12, 5));
+    /* BLUE didn't move — still only sees its own spawn. */
+    CHECK(!game_fog_visible_at(PLAYER_BLUE, 12, 8));
+}
+
+/* An enemy tower seen mid-construction is remembered as BUILDING, with the
+ * type withheld. SLAMMER L1 (build_turns=2) sits in the placer's view. */
+static void test_fog_building_obscures_type(void) {
+    g_test = "fog_building_obscures_type";
+    game_init_with_configs_and_map(TEST_TOWERS_CFG, TEST_CREEP_UPGRADES_CFG, TEST_MAP_CFG);
+    /* RED places a Gunner so it has vision around (15, 11). */
+    game_set_placement(game_tower_id("GUNNER"));
+    game_grid_click(15, 11);
+    game_lock_in();    /* PLAN_BLUE */
+    /* BLUE places SLAMMER on a neutral cell inside RED's view at (16,11). */
+    game_set_placement(game_tower_id("SLAMMER"));
+    game_grid_click(16, 11);
+    const GameState *s = game_get_state();
+    CHECK(game_fog_visible_at(PLAYER_RED, 16, 11));
+    const FogTowerMemory *m = &s->views[PLAYER_RED].mem[16][11];
+    CHECK(m->occ == FOG_OCC_BUILDING);
+    CHECK(m->type == -1);
+    CHECK(m->owner == PLAYER_BLUE);
+}
+
+/* Once an enemy tower completes inside the viewer's vision, the memory
+ * upgrades to FOG_OCC_TOWER with the full type/level. Drive end-of-turn
+ * twice to walk SLAMMER's build_turns from 2 → 0. */
+static void test_fog_completed_tower_visible(void) {
+    g_test = "fog_completed_tower_visible";
+    game_init_with_configs_and_map(TEST_TOWERS_CFG, TEST_CREEP_UPGRADES_CFG, TEST_MAP_CFG);
+    game_set_placement(game_tower_id("GUNNER"));
+    game_grid_click(15, 11);
+    game_lock_in();
+    game_set_placement(game_tower_id("SLAMMER"));
+    game_grid_click(16, 11);
+    /* Two empty sims complete the SLAMMER (build_turns 2 → 1 → 0). */
+    for (int i = 0; i < 2; i++) {
+        enter_sim();
+        run_sim_to_completion();
+    }
+    const GameState *s = game_get_state();
+    const FogTowerMemory *m = &s->views[PLAYER_RED].mem[16][11];
+    CHECK(m->occ == FOG_OCC_TOWER);
+    CHECK(m->type == game_tower_id("SLAMMER"));
+    CHECK(m->level == 1);
+}
+
+/* A tower upgrade in progress is silent: the enemy's memory continues to
+ * show the previously-seen level until the upgrade lands. Use GUNNER for
+ * the target — its L2 build_turns=1, so one sim plus an explicit
+ * intermediate inspection reveals the silent-upgrade phase. */
+static void test_fog_upgrade_is_silent(void) {
+    g_test = "fog_upgrade_is_silent";
+    game_init_with_configs_and_map(TEST_TOWERS_CFG, TEST_CREEP_UPGRADES_CFG, TEST_MAP_CFG);
+    /* RED places a Gunner to spy on the neutral strip. */
+    game_set_placement(game_tower_id("GUNNER"));
+    game_grid_click(15, 11);
+    game_lock_in();
+    /* BLUE places a Gunner at (16, 11). GUNNER L1 has build_turns=0 so
+     * RED immediately sees it as FOG_OCC_TOWER level 1. */
+    game_set_placement(game_tower_id("GUNNER"));
+    game_grid_click(16, 11);
+    const GameState *s = game_get_state();
+    CHECK(s->views[PLAYER_RED].mem[16][11].occ == FOG_OCC_TOWER);
+    CHECK(s->views[PLAYER_RED].mem[16][11].level == 1);
+
+    /* BLUE upgrades that gunner. build_turns becomes 1; level becomes 2
+     * (mid-upgrade). RED's memory must NOT advance — silent upgrade. */
+    game_grid_click(16, 11);              /* select */
+    game_upgrade_selected();
+    CHECK(s->things[s->grid[16][11].thing_id].tower.level == 2);
+    CHECK(s->things[s->grid[16][11].thing_id].tower.build_turns == 1);
+    CHECK(s->views[PLAYER_RED].mem[16][11].occ == FOG_OCC_TOWER);
+    CHECK(s->views[PLAYER_RED].mem[16][11].level == 1);
+}
+
+/* Creep memory persists past end_simulation: corpses are inspectable
+ * during the next planning phase. A creep illuminates its own cell via
+ * its own vision, so its owner's creep_mem populates each tick the
+ * creep is alive — and that entry is still `valid` after sim end. */
+static void test_fog_creep_memory_survives_sim_end(void) {
+    g_test = "fog_creep_memory_survives_sim_end";
+    game_init_with_configs_and_map(TEST_TOWERS_CFG, TEST_CREEP_UPGRADES_CFG, TEST_MAP_CFG);
+    game_buy_creep_upgrade(4);            /* RETRIEVER_INSTANT */
+    enter_sim();
+    run_sim_to_completion();
+    const GameState *s = game_get_state();
+    int found = 0;
+    for (int i = 0; i < MAX_THINGS; i++) {
+        const FogCreepMemory *cm = &s->views[PLAYER_RED].creep_mem[i];
+        if (cm->valid && cm->owner == PLAYER_RED) { found = 1; break; }
+    }
+    CHECK(found);
+}
+
+/* sim_viewer toggle flips RED ↔ BLUE. Initialised to RED. */
+static void test_fog_sim_viewer_toggle(void) {
+    g_test = "fog_sim_viewer_toggle";
+    game_init_with_configs_and_map(TEST_TOWERS_CFG, TEST_CREEP_UPGRADES_CFG, TEST_MAP_CFG);
+    const GameState *s = game_get_state();
+    CHECK(s->sim_viewer == PLAYER_RED);
+    game_toggle_sim_viewer();
+    CHECK(s->sim_viewer == PLAYER_BLUE);
+    game_toggle_sim_viewer();
+    CHECK(s->sim_viewer == PLAYER_RED);
+}
+
 /* ── main ─────────────────────────────────────────────────────────── */
 
 int main(void) {
@@ -966,6 +1101,13 @@ int main(void) {
     test_creeps_spawn_one_per_tick();
     test_merge_semantic_field_overlay();
     test_placement_validity();
+    test_fog_spawn_baseline();
+    test_fog_tower_extends_vision();
+    test_fog_building_obscures_type();
+    test_fog_completed_tower_visible();
+    test_fog_upgrade_is_silent();
+    test_fog_creep_memory_survives_sim_end();
+    test_fog_sim_viewer_toggle();
     printf("%d assertions, %d failures\n", g_assertions, g_fail);
     return g_fail ? 1 : 0;
 }

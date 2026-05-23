@@ -46,6 +46,7 @@ static const char TEST_TOWERS_CFG[] =
     "  dmg 10\n"
     "  range 3\n"
     "  cooldown 2\n"
+    "  vision 2\n"
     "level GUNNER 2\n"
     "  cost 30\n"
     "  hp 70\n"
@@ -53,6 +54,7 @@ static const char TEST_TOWERS_CFG[] =
     "  dmg 15\n"
     "  range 4\n"
     "  cooldown 2\n"
+    "  vision 3\n"
 
     "tower SLAMMER\n"
     "  code S\n"
@@ -170,6 +172,7 @@ static const char TEST_CREEP_UPGRADES_CFG[] =
     "  code            R\n"
     "  hp              20\n"
     "  can_carry_flag  1\n"
+    "  vision          2\n"
     "  description     +1 Retriever instant\n";
 
 /* Map fixture for behavior tests. Mirrors the 30x20 layout the suite was

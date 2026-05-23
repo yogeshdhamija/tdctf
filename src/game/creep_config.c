@@ -88,6 +88,11 @@ static int set_upgrade_field(CreepUpgradeConfig *u, int self_idx,
         if (rc == 0) u->set_flags |= CREEP_UPG_SET_SPAWN_ORDER;
         return rc;
     }
+    if (!strcmp(key, "vision")) {
+        int rc = parse_int(val, &u->vision);
+        if (rc == 0) u->set_flags |= CREEP_UPG_SET_VISION;
+        return rc;
+    }
     if (!strcmp(key, "description")) {
         strncpy(u->description, val, CREEP_UPGRADE_DESC_MAX - 1);
         u->description[CREEP_UPGRADE_DESC_MAX - 1] = 0;

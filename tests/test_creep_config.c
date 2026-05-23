@@ -218,6 +218,30 @@ static void test_set_flags(void) {
     CHECK(partial->count     == 0);       /* default; merge layer treats as inherit */
 }
 
+/* ── Vision is an upgrade-level mergable stat. Parsing sets the flag;
+ *    explicit zero round-trips; absent → 0 and the flag is clear. ─── */
+static void test_vision_field(void) {
+    g_test = "vision_field";
+    const char *src =
+        "creep S\n"
+        "upgrade SCOUT_1\n"
+        "  cost 30\n"
+        "  creep S\n"
+        "  vision 6\n"
+        "upgrade NOVIS\n"
+        "  cost 10\n"
+        "  creep S\n";
+    CHECK(creep_config_load_from_string(src) == 0);
+    int s1 = creep_config_lookup_upgrade("SCOUT_1");
+    int s2 = creep_config_lookup_upgrade("NOVIS");
+    const CreepUpgradeConfig *u1 = &creep_config_get()->upgrades[s1];
+    const CreepUpgradeConfig *u2 = &creep_config_get()->upgrades[s2];
+    CHECK(u1->vision == 6);
+    CHECK((u1->set_flags & CREEP_UPG_SET_VISION) != 0);
+    CHECK(u2->vision == 0);
+    CHECK((u2->set_flags & CREEP_UPG_SET_VISION) == 0);
+}
+
 /* ── 7. Structural error cases reject loudly. ─────────────────────── */
 static void test_error_cases(void) {
     g_test = "error_cases";
@@ -351,6 +375,7 @@ int main(void) {
     test_whitespace_and_comments();
     test_defaults();
     test_set_flags();
+    test_vision_field();
     test_error_cases();
     test_spawn_order();
     test_requires();

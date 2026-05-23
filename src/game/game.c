@@ -56,6 +56,12 @@ int game_tower_upgrade_turns(TowerType t, int from_level) {
     return cfg->level[from_level].build_turns;
 }
 
+int game_tower_vision(TowerType t, int level) {
+    const TowerConfig *cfg = spec(t);
+    if (level < 1 || level > cfg->level_count) return 0;
+    return cfg->level[level - 1].vision;
+}
+
 const char *game_tower_name(TowerType t) { return spec(t)->name; }
 char        game_tower_code(TowerType t) { return spec(t)->code; }
 
@@ -78,6 +84,7 @@ int  game_creep_active_hp(PlayerID o, CreepType t)         { return active_profi
 int  game_creep_active_can_carry_flag(PlayerID o, CreepType t) { return active_profile(o, t)->can_carry_flag; }
 int  game_creep_active_melee_damage(PlayerID o, CreepType t)   { return active_profile(o, t)->melee_damage; }
 int  game_creep_active_spawn_order(PlayerID o, CreepType t)    { return active_profile(o, t)->spawn_order; }
+int  game_creep_active_vision(PlayerID o, CreepType t)         { return active_profile(o, t)->vision; }
 
 int  game_creep_upgrade_total(void)               { return creep_config_get()->upgrade_count; }
 int  game_creep_upgrade_cost(int idx)             { return cu_spec(idx)->cost; }
@@ -232,6 +239,136 @@ static int paths_valid(void) {
     return 1;
 }
 
+/* ── Fog of war ─────────────────────────────────────────── */
+
+/* Vision is Chebyshev: a unit with vision V illuminates the (2V+1)×(2V+1)
+ * square centred on its cell. Towers under construction (build_turns > 0)
+ * don't yet provide vision — they're not "operational". */
+
+static int chebyshev_box_set(uint8_t (*vis)[MAX_GRID_H], int cx, int cy, int r) {
+    int touched = 0;
+    for (int dx = -r; dx <= r; dx++) {
+        int x = cx + dx;
+        if (x < 0 || x >= s.grid_w) continue;
+        for (int dy = -r; dy <= r; dy++) {
+            int y = cy + dy;
+            if (y < 0 || y >= s.grid_h) continue;
+            if (!vis[x][y]) { vis[x][y] = 1; touched++; }
+        }
+    }
+    return touched;
+}
+
+/* Refresh viewer's fog state from current truth. Recomputes vis_now from
+ * scratch by walking things[], OR's vis_now into ever_seen, then updates
+ * the per-cell tower memory and per-thing creep memory for everything in
+ * the viewer's current vision. */
+static void fog_refresh(PlayerID viewer) {
+    PlayerView *v = &s.views[viewer];
+    memset(v->vis_now, 0, sizeof(v->vis_now));
+
+    /* Every player can always see the cell their own spawn occupies, so
+     * even with no units alive there's a foothold. (Without this, a
+     * planning-phase player whose creeps all died last sim has zero
+     * visibility — including of their own spawn cell.) */
+    if (s.spawn_x[viewer] >= 0 && s.spawn_x[viewer] < s.grid_w &&
+        s.spawn_y[viewer] >= 0 && s.spawn_y[viewer] < s.grid_h) {
+        v->vis_now[s.spawn_x[viewer]][s.spawn_y[viewer]] = 1;
+    }
+
+    for (int i = 0; i < s.thing_count; i++) {
+        const Thing *t = &s.things[i];
+        if (!t->alive) continue;
+        if (t->owner != viewer) continue;
+        int r = 0;
+        if (t->tag == THING_TOWER) {
+            if (t->tower.build_turns > 0) continue;       /* mid-build → no vision yet */
+            r = game_tower_vision(t->tower.type, t->tower.level);
+        } else if (t->tag == THING_CREEP) {
+            r = s.players[viewer].active_creeps[t->creep.type].vision;
+        } else {
+            continue;
+        }
+        chebyshev_box_set(v->vis_now, t->x, t->y, r);
+    }
+
+    /* ever_seen is a sticky union of every vis_now we've ever computed. */
+    for (int x = 0; x < s.grid_w; x++)
+        for (int y = 0; y < s.grid_h; y++)
+            if (v->vis_now[x][y]) v->ever_seen[x][y] = 1;
+
+    /* Refresh per-cell tower memory. Rules:
+     *   - empty visible cell    → mem.occ = NONE
+     *   - own tower             → mem = full snapshot
+     *   - enemy fully built     → mem = full snapshot
+     *   - enemy initial build   → mem.occ = BUILDING (type withheld)
+     *   - enemy mid-upgrade     → keep prior mem (silent upgrade); if no
+     *                             prior knowledge, fall back to BUILDING. */
+    for (int x = 0; x < s.grid_w; x++) {
+        for (int y = 0; y < s.grid_h; y++) {
+            if (!v->vis_now[x][y]) continue;
+            FogTowerMemory *m = &v->mem[x][y];
+            int id = s.grid[x][y].thing_id;
+            if (id < 0) { m->occ = FOG_OCC_NONE; m->type = -1; m->level = 0; continue; }
+            const Thing *t = &s.things[id];
+            if (t->tag != THING_TOWER) { m->occ = FOG_OCC_NONE; m->type = -1; m->level = 0; continue; }
+            int enemy = (t->owner != viewer);
+            int building = (t->tower.build_turns > 0);
+            if (enemy && building) {
+                if (t->tower.level > 1 && m->occ == FOG_OCC_TOWER) {
+                    /* Silent upgrade: keep the prior known level snapshot. */
+                    continue;
+                }
+                m->occ    = FOG_OCC_BUILDING;
+                m->owner  = (uint8_t)t->owner;
+                m->type   = -1;
+                m->level  = 0;
+                m->hp     = 0;
+                m->max_hp = 0;
+                continue;
+            }
+            m->occ    = FOG_OCC_TOWER;
+            m->owner  = (uint8_t)t->owner;
+            m->type   = (int8_t)t->tower.type;
+            m->level  = (int8_t)t->tower.level;
+            m->hp     = (uint16_t)(t->hp     < 0 ? 0 : t->hp);
+            m->max_hp = (uint16_t)(t->max_hp < 0 ? 0 : t->max_hp);
+        }
+    }
+
+    /* Refresh per-creep memory for visible creeps. Entries persist after
+     * the creep moves out of vision and after end_simulation kills the
+     * thing — that's the inspectable-corpse mechanic. Only start_simulation
+     * resets creep_mem (see below). */
+    for (int i = 0; i < s.thing_count; i++) {
+        const Thing *t = &s.things[i];
+        if (t->tag != THING_CREEP || !t->alive) continue;
+        if (!v->vis_now[t->x][t->y]) continue;
+        FogCreepMemory *cm = &v->creep_mem[i];
+        cm->valid    = 1;
+        cm->x        = (int8_t)t->x;
+        cm->y        = (int8_t)t->y;
+        cm->owner    = (uint8_t)t->owner;
+        cm->type     = (int8_t)t->creep.type;
+        cm->has_flag = (uint8_t)t->creep.has_flag;
+    }
+}
+
+static void fog_refresh_all(void) {
+    fog_refresh(PLAYER_RED);
+    fog_refresh(PLAYER_BLUE);
+}
+
+int game_fog_visible_at(PlayerID viewer, int x, int y) {
+    if (viewer != PLAYER_RED && viewer != PLAYER_BLUE) return 0;
+    if (x < 0 || y < 0 || x >= s.grid_w || y >= s.grid_h) return 0;
+    return s.views[viewer].vis_now[x][y] ? 1 : 0;
+}
+
+void game_toggle_sim_viewer(void) {
+    s.sim_viewer = (s.sim_viewer == PLAYER_RED) ? PLAYER_BLUE : PLAYER_RED;
+}
+
 /* ── Creep upgrade init ─────────────────────────────────── */
 
 /* Per-player runtime state mirrors the catalog 1:1: index i holds the
@@ -301,6 +438,9 @@ static void game_init_state(void) {
     s.flags[PLAYER_BLUE].owner      = PLAYER_BLUE;
     s.flags[PLAYER_BLUE].carried_by = -1;
     s.flags[PLAYER_BLUE].at_home    = 1;
+
+    s.sim_viewer = PLAYER_RED;
+    fog_refresh_all();
 }
 
 void game_init(void) {
@@ -384,6 +524,7 @@ static void try_place(int gx, int gy, TowerType type) {
     s.players[p].resources -= l1->cost;
     s.placement_intent = -1;
     s.selected_x = gx; s.selected_y = gy;
+    fog_refresh_all();
 }
 
 void game_grid_click(int gx, int gy) {
@@ -426,6 +567,7 @@ void game_upgrade_selected(void) {
     t->tower.build_turns = next->build_turns;
     t->max_hp = next->hp;
     t->hp = t->max_hp;
+    fog_refresh_all();
 }
 
 void game_destroy_selected(void) {
@@ -438,6 +580,7 @@ void game_destroy_selected(void) {
     s.grid[t->x][t->y].thing_id = -1;
     t->alive = 0;
     t->tag = THING_NONE;
+    fog_refresh_all();
 }
 
 void game_buy_creep_upgrade(int idx) {
@@ -522,6 +665,7 @@ static void compute_active_profiles(Player *pl) {
         if (f & CREEP_UPG_SET_CAN_CARRY_FLAG) prof->can_carry_flag = cfg->can_carry_flag;
         if (f & CREEP_UPG_SET_MELEE_DAMAGE)   prof->melee_damage   = cfg->melee_damage;
         if (f & CREEP_UPG_SET_SPAWN_ORDER)    prof->spawn_order    = cfg->spawn_order;
+        if (f & CREEP_UPG_SET_VISION)         prof->vision         = cfg->vision;
     }
 }
 
@@ -534,6 +678,11 @@ static void start_simulation(void) {
         Thing *t = &s.things[i];
         if (t->tag == THING_TOWER) { t->beam_ttl = 0; t->tower.cooldown = 0; }
     }
+    /* Wipe previous-turn creep memories; this round's wave will repopulate
+     * them tick by tick. Tower memory persists across sims (it's the
+     * "frozen last seen" state from §6). */
+    for (int p = 0; p < 2; p++)
+        memset(s.views[p].creep_mem, 0, sizeof(s.views[p].creep_mem));
     /* For each player: collapse completed-upgrade overlays into one
      * merged profile per creep type, then push `count` queue entries per
      * active type and sort by spawn_order. Overflow past MAX_SPAWN_QUEUE
@@ -554,6 +703,7 @@ static void start_simulation(void) {
         }
         sort_spawn_queue(pl);
     }
+    fog_refresh_all();
 }
 
 /* Pop the next queued creep type (if any) for the player and spawn at
@@ -721,6 +871,7 @@ static void sim_one_tick(void) {
         t->tag   = THING_NONE;
     }
 
+    fog_refresh_all();
     s.sim_tick++;
 }
 
@@ -770,6 +921,10 @@ static void end_simulation(void) {
     s.phase = PHASE_PLAN_RED;
     s.selected_x = -1; s.selected_y = -1;
     s.placement_intent = -1;
+    /* Build_turns decrement above may have completed a tower → its vision
+     * just turned on. Refresh once more after end-of-turn bookkeeping so
+     * the next planning phase sees the post-completion state. */
+    fog_refresh_all();
 }
 
 void game_lock_in(void) {
@@ -1064,6 +1219,10 @@ int game_snapshot_load(const char *src) {
      * them here. start_simulation also zeroes sim_tick / beam_ttl / cooldown
      * which matches the snapshot's implicit "fresh sim" semantics. */
     if (s.phase == PHASE_SIMULATE) start_simulation();
+
+    /* Snapshot doesn't carry view history — rebuild fog from the current
+     * truth so both viewers see whatever their alive units illuminate. */
+    fog_refresh_all();
 
     return 0;
 }

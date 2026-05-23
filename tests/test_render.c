@@ -232,6 +232,57 @@ static void test_simulation_phase_no_buttons(void) {
     CHECK(!present(BTN_UPGRADE_TOWER));
     CHECK(!present(BTN_DESTROY_TOWER));
     CHECK(!present(BTN_RESTART));
+    /* Toggle button IS hittable during sim — it's the only sidebar control. */
+    CHECK(present(BTN_TOGGLE_VIEWER));
+}
+
+/* Fog of war: an enemy tower outside the viewer's vision must not draw
+ * its tower-code glyph. RED places a Gunner deep in their own zone; on
+ * PLAN_BLUE the viewer is BLUE, who has no vision into RED's territory,
+ * so RED's "G1" must not appear on the canvas. */
+static void test_fog_hides_enemy_tower_glyph(void) {
+    g_test = "fog_hides_enemy_tower_glyph";
+    game_init_with_configs_and_map(TEST_TOWERS_CFG, TEST_CREEP_UPGRADES_CFG, TEST_MAP_CFG);
+    /* RED zone is x < 10. Place a Gunner at (3, 4) — far from any BLUE unit. */
+    game_set_placement(game_tower_id("GUNNER"));
+    game_grid_click(3, 4);
+    game_lock_in();                /* → PLAN_BLUE; viewer becomes BLUE */
+
+    reset_text_log();
+    render_frame(game_get_state());
+    int gw = 30 * CELL_SIZE;
+    int x_lo = 3 * CELL_SIZE, x_hi = x_lo + CELL_SIZE;
+    int y_lo = 4 * CELL_SIZE, y_hi = y_lo + CELL_SIZE;
+    for (int i = 0; i < g_text_call_count; i++) {
+        const TextCall *tc = &g_text_calls[i];
+        if (tc->x >= gw) continue; /* sidebar */
+        if (tc->x >= x_lo && tc->x < x_hi && tc->y >= y_lo && tc->y < y_hi) {
+            /* The Gunner's glyph "G1" must not appear at this cell. */
+            CHECK(strcmp(tc->text, "G1") != 0);
+            CHECK(strcmp(tc->text, "G1*") != 0);
+        }
+    }
+}
+
+/* Fog of war: the enemy's resource/income block in the sidebar is masked
+ * — the viewer sees their own real numbers but only "$???" for the opponent. */
+static void test_fog_masks_enemy_sidebar_resources(void) {
+    g_test = "fog_masks_enemy_sidebar_resources";
+    game_init_with_configs_and_map(TEST_TOWERS_CFG, TEST_CREEP_UPGRADES_CFG, TEST_MAP_CFG);
+    /* Both players start at $100. In PLAN_RED, the RED line should show
+     * "$100" and the BLUE line should be masked. */
+    reset_text_log();
+    render_frame(game_get_state());
+    int saw_red_full = 0, saw_blue_full = 0, saw_blue_masked = 0;
+    for (int i = 0; i < g_text_call_count; i++) {
+        const char *t = g_text_calls[i].text;
+        if (strstr(t, "RED") && strstr(t, "$100")) saw_red_full = 1;
+        if (strstr(t, "BLUE") && strstr(t, "$100")) saw_blue_full = 1;
+        if (strstr(t, "BLUE") && strstr(t, "$???")) saw_blue_masked = 1;
+    }
+    CHECK(saw_red_full);
+    CHECK(!saw_blue_full);
+    CHECK(saw_blue_masked);
 }
 
 /* When multiple creeps share a cell, a per-owner count badge is drawn in the
@@ -274,6 +325,10 @@ static void test_stacked_creep_count_badge(void) {
     }
     CHECK(seen == 2);
 
+    /* During SIMULATE the viewer defaults to RED. Toggle to BLUE so the
+     * BLUE creeps we just snapped together fall inside g_viewer's view
+     * and the crowding badge actually renders. */
+    game_toggle_sim_viewer();
     reset_text_log();
     render_frame(s);
     int x_lo = crowd_x * CELL_SIZE, x_hi = x_lo + CELL_SIZE;
@@ -360,6 +415,8 @@ int main(void) {
     test_selected_tower_shows_build_turns();
     test_enemy_tower_selected_no_upgrade_destroy();
     test_simulation_phase_no_buttons();
+    test_fog_hides_enemy_tower_glyph();
+    test_fog_masks_enemy_sidebar_resources();
     test_stacked_creep_count_badge();
     test_single_creep_no_badge();
     test_game_over_shows_restart();

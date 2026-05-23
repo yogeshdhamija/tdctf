@@ -35,6 +35,8 @@ typedef struct {
                         * the rolled damage uniformly to all hit targets. */
     int crit_dmg;      /* damage substituted for `dmg` when the crit roll
                         * succeeds. Ignored when crit_chance is 0. */
+    int vision;        /* fog-of-war vision radius (Chebyshev) granted by
+                        * this tower at this level. 0 = only own cell. */
 } TowerLevelStats;
 
 typedef struct {

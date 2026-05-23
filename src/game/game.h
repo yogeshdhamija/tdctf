@@ -92,6 +92,7 @@ typedef struct {
     int  can_carry_flag;
     int  melee_damage;
     int  spawn_order;
+    int  vision;
 } ActiveCreepProfile;
 
 typedef struct {
@@ -126,6 +127,46 @@ typedef struct {
     int x, y;
 } Point;
 
+/* Fog of war per docs/game-design.md §6. Each player has a `PlayerView`
+ * snapshot, refreshed every sim tick (and after each planning action) from
+ * the *truth* in things[]/grid[]. The simulation itself ignores fog — it
+ * reads the truth — fog is purely a rendering input. */
+typedef enum {
+    FOG_OCC_NONE = 0,    /* known empty: viewer last saw this cell with no tower */
+    FOG_OCC_BUILDING,    /* enemy tower under construction; type withheld */
+    FOG_OCC_TOWER        /* enemy or own tower seen in full */
+} FogOccKind;
+
+/* Per-cell snapshot of the last tower seen here by this viewer. Packed
+ * so the per-player 40×30 grid stays ~10 KB. */
+typedef struct {
+    uint8_t  occ;        /* FogOccKind */
+    uint8_t  owner;      /* PlayerID; valid when occ != FOG_OCC_NONE */
+    int8_t   type;       /* TowerType; valid only when occ == FOG_OCC_TOWER */
+    int8_t   level;      /* tower level at last sighting */
+    uint16_t hp;
+    uint16_t max_hp;
+} FogTowerMemory;
+
+/* Per-creep memory entry, indexed parallel to things[]. valid=0 means the
+ * viewer has no memory of a creep in this slot (never seen, or wiped at
+ * start_simulation). Persists across `end_simulation`'s mass death — that's
+ * the inspectable-corpse mechanic from §6. */
+typedef struct {
+    uint8_t  valid;
+    int8_t   x, y;
+    uint8_t  owner;
+    int8_t   type;       /* CreepType */
+    uint8_t  has_flag;
+} FogCreepMemory;
+
+typedef struct {
+    uint8_t        vis_now  [MAX_GRID_W][MAX_GRID_H]; /* recomputed each refresh */
+    uint8_t        ever_seen[MAX_GRID_W][MAX_GRID_H]; /* sticky; never cleared */
+    FogTowerMemory mem      [MAX_GRID_W][MAX_GRID_H];
+    FogCreepMemory creep_mem[MAX_THINGS];
+} PlayerView;
+
 typedef struct {
     Cell   grid[MAX_GRID_W][MAX_GRID_H];
     int    grid_w, grid_h;
@@ -148,6 +189,9 @@ typedef struct {
     char     status_msg[96];
     int      status_ttl;
     uint32_t rng_state;                       /* xorshift32 PRNG; snapshotted */
+
+    PlayerView views[2];                      /* fog-of-war state per player */
+    int        sim_viewer;                    /* PlayerID rendered during SIMULATE/GAME_OVER (toggle button) */
 } GameState;
 
 /* Lifecycle */
@@ -198,6 +242,14 @@ int              game_creep_active_hp(PlayerID owner, CreepType t);
 int              game_creep_active_can_carry_flag(PlayerID owner, CreepType t);
 int              game_creep_active_melee_damage(PlayerID owner, CreepType t);
 int              game_creep_active_spawn_order(PlayerID owner, CreepType t);
+int              game_creep_active_vision(PlayerID owner, CreepType t);
+
+/* Fog-of-war accessors (see PlayerView). Vision radius is Chebyshev:
+ * cell (cx,cy) is visible from a unit at (ux,uy) iff
+ * max(|cx-ux|,|cy-uy|) <= unit_vision. */
+int              game_tower_vision(TowerType t, int level);
+int              game_fog_visible_at(PlayerID viewer, int x, int y);
+void             game_toggle_sim_viewer(void);
 
 /* Creep upgrade catalog accessors. Per-player dynamic state (purchased /
  * completed / turns_remaining) lives on Player.creep_upgrades[idx]. */

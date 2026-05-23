@@ -44,6 +44,7 @@ typedef struct {
 #define CREEP_UPG_SET_CAN_CARRY_FLAG (1u << 3)
 #define CREEP_UPG_SET_MELEE_DAMAGE   (1u << 4)
 #define CREEP_UPG_SET_SPAWN_ORDER    (1u << 5)
+#define CREEP_UPG_SET_VISION         (1u << 6)
 
 typedef struct {
     char id[CREEP_UPGRADE_ID_MAX];           /* config identifier, e.g. "RECRUIT" */
@@ -56,6 +57,7 @@ typedef struct {
     int  can_carry_flag;                     /* 0/1: picks up enemy flag on contact */
     int  melee_damage;                       /* damage per tick to any adjacent enemy tower (0 = no melee) */
     int  spawn_order;                        /* sort key for the per-turn spawn queue; lower spawns first */
+    int  vision;                             /* fog-of-war vision radius (Chebyshev) for a spawned creep of this type */
     int  requires;                           /* prerequisite upgrade index (must be completed before purchase), or -1 */
     char description[CREEP_UPGRADE_DESC_MAX];/* sidebar label; may contain spaces */
     unsigned int set_flags;                  /* bitmask: which of the above were explicitly set in the cfg */
