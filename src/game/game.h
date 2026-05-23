@@ -6,11 +6,12 @@
 #define MAX_GRID_W 40
 #define MAX_GRID_H 30
 #define MAX_THINGS 400
-/* Player array size — matches CREEP_UPGRADE_MAX_COUNT in creep_config.h.
- * Kept as a local define so game.h doesn't need to pull in the catalog
- * header (mirrors how MAX_THINGS sizes the things array without dragging
- * tower_config.h into game.h). */
+/* Sizes — match CREEP_UPGRADE_MAX_COUNT / CREEP_TYPE_MAX_COUNT in
+ * creep_config.h. Kept as local defines so game.h doesn't need to pull
+ * in the catalog header (mirrors how MAX_THINGS sizes the things array
+ * without dragging tower_config.h into game.h). */
 #define MAX_CREEP_UPGRADES 8
+#define MAX_CREEP_TYPES    8
 #define MAX_SPAWN_QUEUE 64
 #define MAX_BEAMS 64
 #define SIM_TICKS_PER_TURN 100
@@ -66,8 +67,9 @@ typedef struct {
 } Cell;
 
 /* Per-player runtime state for one creep upgrade. The static spec
- * (cost, research_turns, spawn_type, spawn_count, description) lives in
- * the catalog at data/creep_upgrades.cfg, accessed via game_creep_upgrade_*
+ * (cost, research_turns, creep_type, count, code, hp, can_carry_flag,
+ * melee_damage, spawn_order, description, set_flags) lives in the
+ * catalog at data/creep_upgrades.cfg, accessed via game_creep_upgrade_*
  * accessors. The array index into Player.creep_upgrades matches the
  * catalog upgrade index. */
 typedef struct {
@@ -76,22 +78,41 @@ typedef struct {
     int completed;
 } CreepUpgrade;
 
+/* Merged creep profile for one (player, creep type). Built fresh at
+ * start_simulation() by walking the player's completed upgrades in
+ * catalog order and overlaying each upgrade's *set* fields. `active`
+ * goes to 1 the first time any upgrade overlays anything for this
+ * type — `count == 0` is then a legitimate "stat-buff only" upgrade,
+ * not "no profile here". */
 typedef struct {
-    int          resources;
-    int          income_per_turn;
-    CreepUpgrade creep_upgrades[MAX_CREEP_UPGRADES];
-    int          creep_upgrade_count;
-    int          pending_place_x, pending_place_y; /* RED-only placement queued for conflict resolve */
-    int          pending_place_type;               /* -1 if no pending placement */
-    /* Spawn queue: the flat list of creep types this player will spawn over
-     * the current sim, sorted by each type's spawn_order. One entry is
-     * drained at the start of each sim tick — the wave appears as a line
-     * along the path rather than a stack on the spawn cell. Built fresh in
-     * start_simulation() from each completed upgrade's (spawn_type ×
-     * spawn_count); reset on every sim. */
-    CreepType    spawn_queue[MAX_SPAWN_QUEUE];
-    int          spawn_queue_count;
-    int          spawn_queue_pos;
+    int  active;
+    int  count;
+    char code;
+    int  hp;
+    int  can_carry_flag;
+    int  melee_damage;
+    int  spawn_order;
+} ActiveCreepProfile;
+
+typedef struct {
+    int                resources;
+    int                income_per_turn;
+    CreepUpgrade       creep_upgrades[MAX_CREEP_UPGRADES];
+    int                creep_upgrade_count;
+    int                pending_place_x, pending_place_y; /* RED-only placement queued for conflict resolve */
+    int                pending_place_type;               /* -1 if no pending placement */
+    /* Merged creep profiles, indexed by CreepType. Recomputed at every
+     * start_simulation() from the player's completed-upgrade overlay. */
+    ActiveCreepProfile active_creeps[MAX_CREEP_TYPES];
+    /* Spawn queue: a flat list of CreepType indices. One entry is drained
+     * at the start of each sim tick into a spawn at spawn_x/spawn_y; the
+     * spawn reads its profile from active_creeps[type]. Built fresh in
+     * start_simulation() — for each type with an active merged profile,
+     * push `count` copies and then sort by spawn_order. Reset on every
+     * sim. */
+    CreepType          spawn_queue[MAX_SPAWN_QUEUE];
+    int                spawn_queue_count;
+    int                spawn_queue_pos;
 } Player;
 
 typedef struct {
@@ -158,20 +179,33 @@ const char      *game_tower_name(TowerType t);
 char             game_tower_code(TowerType t);
 
 /* Creep type catalog accessors. CreepType is an index into the catalog
- * at data/creep_upgrades.cfg. */
+ * at data/creep_upgrades.cfg. Types are bare identifiers — all behavior
+ * (code, hp, can_carry_flag, melee_damage, spawn_order, count) is
+ * defined by the upgrades that target the type and merged per-player at
+ * sim start. */
 int              game_creep_type_count(void);
 int              game_creep_type_id(const char *name);     /* -1 if not found */
-char             game_creep_type_code(CreepType t);
-int              game_creep_type_can_carry_flag(CreepType t);
-int              game_creep_type_melee_damage(CreepType t);
-int              game_creep_type_spawn_order(CreepType t);
+
+/* Live merged creep profile for a (player, creep type) pair. Reads
+ * Player.active_creeps[t] — what was overlaid from completed upgrades at
+ * the most recent start_simulation. game_creep_is_active returns 0 when
+ * no completed upgrade has touched this type for this player; the
+ * per-field accessors then return 0 / '\0'. */
+int              game_creep_is_active(PlayerID owner, CreepType t);
+int              game_creep_active_count(PlayerID owner, CreepType t);
+char             game_creep_active_code(PlayerID owner, CreepType t);
+int              game_creep_active_hp(PlayerID owner, CreepType t);
+int              game_creep_active_can_carry_flag(PlayerID owner, CreepType t);
+int              game_creep_active_melee_damage(PlayerID owner, CreepType t);
+int              game_creep_active_spawn_order(PlayerID owner, CreepType t);
 
 /* Creep upgrade catalog accessors. Per-player dynamic state (purchased /
  * completed / turns_remaining) lives on Player.creep_upgrades[idx]. */
-int              game_creep_upgrade_count(void);
+int              game_creep_upgrade_total(void);            /* count of upgrades in catalog */
 int              game_creep_upgrade_cost(int idx);
 int              game_creep_upgrade_research_turns(int idx);
 const char      *game_creep_upgrade_description(int idx);
+int              game_creep_upgrade_creep_type(int idx);    /* target CreepType, or -1 */
 
 PlayerID         game_planning_player(void);                /* meaningful only in planning */
 

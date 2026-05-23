@@ -116,8 +116,8 @@ static void test_planning_buttons_visible(void) {
     CHECK(game_tower_count() > 0);
     for (int i = 0; i < game_tower_count(); i++)
         CHECK(present(BTN_PLACE_TOWER_BASE + i));
-    CHECK(game_creep_upgrade_count() > 0);
-    for (int i = 0; i < game_creep_upgrade_count(); i++)
+    CHECK(game_creep_upgrade_total() > 0);
+    for (int i = 0; i < game_creep_upgrade_total(); i++)
         CHECK(present(BTN_BUY_UPGRADE_BASE + i));
     /* No tower selected yet → no upgrade/destroy buttons. */
     CHECK(!present(BTN_UPGRADE_TOWER));

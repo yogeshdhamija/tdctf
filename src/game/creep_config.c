@@ -33,46 +33,48 @@ static void rtrim(char *s) {
     while (n > 0 && isspace((unsigned char)s[n - 1])) s[--n] = 0;
 }
 
-static int set_type_field(CreepTypeConfig *t, const char *key, const char *val) {
-    if (!strcmp(key, "code")) {
-        if (strlen(val) != 1) return -1;
-        t->code = val[0];
-        return 0;
-    }
-    if (!strcmp(key, "hp"))             return parse_int(val, &t->hp);
-    if (!strcmp(key, "can_carry_flag")) return parse_int(val, &t->can_carry_flag);
-    if (!strcmp(key, "melee_damage"))   return parse_int(val, &t->melee_damage);
-    if (!strcmp(key, "spawn_order"))    return parse_int(val, &t->spawn_order);
-    return -1;
-}
-
-/* `spawn <CREEP_ID> <N>` — value carries two whitespace-separated tokens.
- * Resolves CREEP_ID to a type index, requires N to be an integer. */
-static int set_upgrade_spawn(CreepUpgradeConfig *u, const char *val) {
-    char tmp[CREEP_TYPE_ID_MAX + 32];
-    size_t n = strlen(val);
-    if (n >= sizeof(tmp)) return -1;
-    memcpy(tmp, val, n + 1);
-
-    char *s = tmp;
-    while (*s && isspace((unsigned char)*s)) s++;
-    char *creep_id = s;
-    while (*s && !isspace((unsigned char)*s)) s++;
-    if (!*s) return -1;             /* missing count token */
-    *s = 0; s++;
-    while (*s && isspace((unsigned char)*s)) s++;
-    if (!*s) return -1;
-
-    int idx = creep_config_lookup_type(creep_id);
+static int set_upgrade_creep_target(CreepUpgradeConfig *u, const char *val) {
+    int idx = creep_config_lookup_type(val);
     if (idx < 0) return -1;
-    u->spawn_type = idx;
-    return parse_int(s, &u->spawn_count);
+    u->creep_type = idx;
+    return 0;
 }
 
 static int set_upgrade_field(CreepUpgradeConfig *u, const char *key, const char *val) {
     if (!strcmp(key, "cost"))           return parse_int(val, &u->cost);
     if (!strcmp(key, "research_turns")) return parse_int(val, &u->research_turns);
-    if (!strcmp(key, "spawn"))          return set_upgrade_spawn(u, val);
+    if (!strcmp(key, "creep"))          return set_upgrade_creep_target(u, val);
+    if (!strcmp(key, "count")) {
+        int rc = parse_int(val, &u->count);
+        if (rc == 0) u->set_flags |= CREEP_UPG_SET_COUNT;
+        return rc;
+    }
+    if (!strcmp(key, "code")) {
+        if (strlen(val) != 1) return -1;
+        u->code = val[0];
+        u->set_flags |= CREEP_UPG_SET_CODE;
+        return 0;
+    }
+    if (!strcmp(key, "hp")) {
+        int rc = parse_int(val, &u->hp);
+        if (rc == 0) u->set_flags |= CREEP_UPG_SET_HP;
+        return rc;
+    }
+    if (!strcmp(key, "can_carry_flag")) {
+        int rc = parse_int(val, &u->can_carry_flag);
+        if (rc == 0) u->set_flags |= CREEP_UPG_SET_CAN_CARRY_FLAG;
+        return rc;
+    }
+    if (!strcmp(key, "melee_damage")) {
+        int rc = parse_int(val, &u->melee_damage);
+        if (rc == 0) u->set_flags |= CREEP_UPG_SET_MELEE_DAMAGE;
+        return rc;
+    }
+    if (!strcmp(key, "spawn_order")) {
+        int rc = parse_int(val, &u->spawn_order);
+        if (rc == 0) u->set_flags |= CREEP_UPG_SET_SPAWN_ORDER;
+        return rc;
+    }
     if (!strcmp(key, "description")) {
         strncpy(u->description, val, CREEP_UPGRADE_DESC_MAX - 1);
         u->description[CREEP_UPGRADE_DESC_MAX - 1] = 0;
@@ -85,9 +87,9 @@ typedef enum { SECTION_NONE, SECTION_TYPE, SECTION_UPGRADE } SectionKind;
 
 int creep_config_load_from_string(const char *src) {
     memset(&g_catalog, 0, sizeof(g_catalog));
-    /* Mark every potential upgrade slot as "no spawn" by default so an
-     * upgrade with no `spawn` directive cleanly resolves to "spawn nothing". */
-    for (int i = 0; i < CREEP_UPGRADE_MAX_COUNT; i++) g_catalog.upgrades[i].spawn_type = -1;
+    /* Default creep_type to -1 ("no target") so an upgrade without an
+     * explicit `creep` directive cleanly resolves to "spawns nothing". */
+    for (int i = 0; i < CREEP_UPGRADE_MAX_COUNT; i++) g_catalog.upgrades[i].creep_type = -1;
 
     SectionKind kind = SECTION_NONE;
     int  current_idx = -1;
@@ -104,9 +106,6 @@ int creep_config_load_from_string(const char *src) {
         char *hash = strchr(line, '#');
         if (hash) *hash = 0;
 
-        /* First token is the key; rest of the line (trimmed) is the value.
-         * For `spawn` the value is itself two tokens, but that's handled
-         * downstream in set_upgrade_spawn. */
         char *s = line;
         while (*s && isspace((unsigned char)*s)) s++;
         if (!*s) continue;
@@ -117,7 +116,22 @@ int creep_config_load_from_string(const char *src) {
         char *val = s;
         rtrim(val);
 
-        if (!strcmp(key, "creep")) {
+        if (!strcmp(key, "upgrade")) {
+            if (!*val) return -1;
+            if (creep_config_lookup_upgrade(val) >= 0) return -1;
+            if (g_catalog.upgrade_count >= CREEP_UPGRADE_MAX_COUNT) return -1;
+            CreepUpgradeConfig *u = &g_catalog.upgrades[g_catalog.upgrade_count];
+            memset(u, 0, sizeof(*u));
+            u->creep_type = -1;
+            strncpy(u->id, val, CREEP_UPGRADE_ID_MAX - 1);
+            current_idx = g_catalog.upgrade_count++;
+            kind = SECTION_UPGRADE;
+            continue;
+        }
+        /* `creep` is overloaded: at top level (or after a type section) it
+         * declares a new type; inside an upgrade body it sets the target
+         * creep type for that upgrade. */
+        if (!strcmp(key, "creep") && kind != SECTION_UPGRADE) {
             if (!*val) return -1;
             if (creep_config_lookup_type(val) >= 0) return -1;
             if (g_catalog.type_count >= CREEP_TYPE_MAX_COUNT) return -1;
@@ -128,24 +142,11 @@ int creep_config_load_from_string(const char *src) {
             kind = SECTION_TYPE;
             continue;
         }
-        if (!strcmp(key, "upgrade")) {
-            if (!*val) return -1;
-            if (creep_config_lookup_upgrade(val) >= 0) return -1;
-            if (g_catalog.upgrade_count >= CREEP_UPGRADE_MAX_COUNT) return -1;
-            CreepUpgradeConfig *u = &g_catalog.upgrades[g_catalog.upgrade_count];
-            memset(u, 0, sizeof(*u));
-            u->spawn_type = -1;
-            strncpy(u->id, val, CREEP_UPGRADE_ID_MAX - 1);
-            current_idx = g_catalog.upgrade_count++;
-            kind = SECTION_UPGRADE;
-            continue;
-        }
 
-        if (kind == SECTION_NONE || !*val) return -1;
-        int rc = (kind == SECTION_TYPE)
-                 ? set_type_field(&g_catalog.types[current_idx], key, val)
-                 : set_upgrade_field(&g_catalog.upgrades[current_idx], key, val);
-        if (rc != 0) return -1;
+        /* All other body keys are upgrade-only. A creep type's section is
+         * just its declaration line — there are no inner keys for it. */
+        if (kind != SECTION_UPGRADE || !*val) return -1;
+        if (set_upgrade_field(&g_catalog.upgrades[current_idx], key, val) != 0) return -1;
     }
 
     return 0;

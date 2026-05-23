@@ -62,23 +62,28 @@ char        game_tower_code(TowerType t) { return spec(t)->code; }
 /* Creep catalog lookups. The catalog is global; per-player runtime state
  * (purchased / completed / turns_remaining) is on Player.creep_upgrades
  * indexed parallel to the catalog's upgrades array. */
-static const CreepTypeConfig    *ct_spec(CreepType t) {
-    return &creep_config_get()->types[t];
-}
 static const CreepUpgradeConfig *cu_spec(int idx) {
     return &creep_config_get()->upgrades[idx];
 }
 int  game_creep_type_count(void)             { return creep_config_get()->type_count; }
 int  game_creep_type_id(const char *name)    { return creep_config_lookup_type(name); }
-char game_creep_type_code(CreepType t)       { return ct_spec(t)->code; }
-int  game_creep_type_can_carry_flag(CreepType t) { return ct_spec(t)->can_carry_flag; }
-int  game_creep_type_melee_damage(CreepType t)   { return ct_spec(t)->melee_damage; }
-int  game_creep_type_spawn_order(CreepType t)    { return ct_spec(t)->spawn_order; }
 
-int  game_creep_upgrade_count(void)               { return creep_config_get()->upgrade_count; }
+static const ActiveCreepProfile *active_profile(PlayerID owner, CreepType t) {
+    return &s.players[owner].active_creeps[t];
+}
+int  game_creep_is_active(PlayerID o, CreepType t)         { return active_profile(o, t)->active; }
+int  game_creep_active_count(PlayerID o, CreepType t)      { return active_profile(o, t)->count; }
+char game_creep_active_code(PlayerID o, CreepType t)       { return active_profile(o, t)->code; }
+int  game_creep_active_hp(PlayerID o, CreepType t)         { return active_profile(o, t)->hp; }
+int  game_creep_active_can_carry_flag(PlayerID o, CreepType t) { return active_profile(o, t)->can_carry_flag; }
+int  game_creep_active_melee_damage(PlayerID o, CreepType t)   { return active_profile(o, t)->melee_damage; }
+int  game_creep_active_spawn_order(PlayerID o, CreepType t)    { return active_profile(o, t)->spawn_order; }
+
+int  game_creep_upgrade_total(void)               { return creep_config_get()->upgrade_count; }
 int  game_creep_upgrade_cost(int idx)             { return cu_spec(idx)->cost; }
 int  game_creep_upgrade_research_turns(int idx)   { return cu_spec(idx)->research_turns; }
 const char *game_creep_upgrade_description(int idx) { return cu_spec(idx)->description; }
+int  game_creep_upgrade_creep_type(int idx)       { return cu_spec(idx)->creep_type; }
 
 PlayerID game_planning_player(void) {
     return (s.phase == PHASE_PLAN_BLUE) ? PLAYER_BLUE : PLAYER_RED;
@@ -454,35 +459,64 @@ void game_buy_creep_upgrade(int idx) {
 
 /* ── Simulation ─────────────────────────────────────────── */
 
+/* Spawn one creep at the player's spawn cell using the merged profile
+ * for (player, creep type). The profile is built once per sim start
+ * (see compute_active_profiles), so sim-tick lookups stay O(1). */
 static void spawn_creep(PlayerID p, CreepType ct) {
+    const ActiveCreepProfile *prof = &s.players[p].active_creeps[ct];
+    if (!prof->active) return;
     int id = alloc_thing();
     if (id < 0) return;
-    const CreepTypeConfig *cspec = ct_spec(ct);
     Thing *t = &s.things[id];
     memset(t, 0, sizeof(*t));
     t->tag    = THING_CREEP;
     t->owner  = p;
     t->x      = s.spawn_x[p];
     t->y      = s.spawn_y[p];
-    t->hp     = cspec->hp;
+    t->hp     = prof->hp;
     t->max_hp = t->hp;
     t->alive  = 1;
     t->creep.type = ct;
 }
 
-/* Insertion sort the player's spawn queue by each creep type's spawn_order
- * (ascending). Stable: equal orders keep declaration/insertion order, which
- * is the order upgrades sit in the catalog. */
+/* Insertion sort the player's spawn queue by each type's merged
+ * spawn_order (ascending). Stable: equal orders keep insertion order,
+ * which is creep-type catalog order. */
 static void sort_spawn_queue(Player *pl) {
     for (int i = 1; i < pl->spawn_queue_count; i++) {
-        CreepType v  = pl->spawn_queue[i];
-        int       so = ct_spec(v)->spawn_order;
-        int       j  = i - 1;
-        while (j >= 0 && ct_spec(pl->spawn_queue[j])->spawn_order > so) {
+        CreepType v = pl->spawn_queue[i];
+        int so = pl->active_creeps[v].spawn_order;
+        int j  = i - 1;
+        while (j >= 0 && pl->active_creeps[pl->spawn_queue[j]].spawn_order > so) {
             pl->spawn_queue[j + 1] = pl->spawn_queue[j];
             j--;
         }
         pl->spawn_queue[j + 1] = v;
+    }
+}
+
+/* Walk a player's completed upgrades in catalog order and overlay each
+ * upgrade's *set* fields onto its target type's profile. An upgrade
+ * with set_flags == 0 still flips the type's `active` bit so its zero
+ * defaults take effect — that's what "completed upgrade with empty body"
+ * means under the merge semantic. */
+static void compute_active_profiles(Player *pl) {
+    for (int i = 0; i < MAX_CREEP_TYPES; i++)
+        memset(&pl->active_creeps[i], 0, sizeof(pl->active_creeps[i]));
+    for (int i = 0; i < pl->creep_upgrade_count; i++) {
+        if (!pl->creep_upgrades[i].completed) continue;
+        const CreepUpgradeConfig *cfg = cu_spec(i);
+        if (cfg->creep_type < 0) continue;
+        if (cfg->creep_type >= MAX_CREEP_TYPES) continue;
+        ActiveCreepProfile *prof = &pl->active_creeps[cfg->creep_type];
+        prof->active = 1;
+        unsigned f = cfg->set_flags;
+        if (f & CREEP_UPG_SET_COUNT)          prof->count          = cfg->count;
+        if (f & CREEP_UPG_SET_CODE)           prof->code           = cfg->code;
+        if (f & CREEP_UPG_SET_HP)             prof->hp             = cfg->hp;
+        if (f & CREEP_UPG_SET_CAN_CARRY_FLAG) prof->can_carry_flag = cfg->can_carry_flag;
+        if (f & CREEP_UPG_SET_MELEE_DAMAGE)   prof->melee_damage   = cfg->melee_damage;
+        if (f & CREEP_UPG_SET_SPAWN_ORDER)    prof->spawn_order    = cfg->spawn_order;
     }
 }
 
@@ -495,33 +529,31 @@ static void start_simulation(void) {
         Thing *t = &s.things[i];
         if (t->tag == THING_TOWER) { t->beam_ttl = 0; t->tower.cooldown = 0; }
     }
-    /* Build the per-player spawn queue: for every completed upgrade, push
-     * spawn_count copies of its spawn_type. Then sort by creep-type
-     * spawn_order so creeps appear in the configured order, one per tick.
-     * Upgrades without a `spawn` directive (spawn_type < 0) contribute
-     * nothing. If the catalog ever holds more spawns than MAX_SPAWN_QUEUE
-     * the overflow is silently dropped — bumping the cap is the fix. */
+    /* For each player: collapse completed-upgrade overlays into one
+     * merged profile per creep type, then push `count` queue entries per
+     * active type and sort by spawn_order. Overflow past MAX_SPAWN_QUEUE
+     * is silently dropped. */
     for (int p = 0; p < 2; p++) {
         Player *pl = &s.players[p];
         pl->spawn_queue_count = 0;
         pl->spawn_queue_pos   = 0;
-        for (int i = 0; i < pl->creep_upgrade_count; i++) {
-            const CreepUpgrade       *u   = &pl->creep_upgrades[i];
-            const CreepUpgradeConfig *cfg = cu_spec(i);
-            if (!u->completed) continue;
-            if (cfg->spawn_type < 0 || cfg->spawn_count <= 0) continue;
-            for (int n = cfg->spawn_count; n > 0; n--) {
+        compute_active_profiles(pl);
+        int type_count = creep_config_get()->type_count;
+        for (int ct = 0; ct < type_count && ct < MAX_CREEP_TYPES; ct++) {
+            const ActiveCreepProfile *prof = &pl->active_creeps[ct];
+            if (!prof->active || prof->count <= 0) continue;
+            for (int n = prof->count; n > 0; n--) {
                 if (pl->spawn_queue_count >= MAX_SPAWN_QUEUE) break;
-                pl->spawn_queue[pl->spawn_queue_count++] = cfg->spawn_type;
+                pl->spawn_queue[pl->spawn_queue_count++] = (CreepType)ct;
             }
         }
         sort_spawn_queue(pl);
     }
 }
 
-/* Pop the next queued creep (if any) for the player and spawn it at the
- * spawn cell. Called once per player at the start of every sim tick — that
- * gives the wave a one-cell stride along the path. */
+/* Pop the next queued creep type (if any) for the player and spawn at
+ * the spawn cell. Called once per player at the start of every sim tick
+ * — that gives the wave a one-cell stride along the path. */
 static void drain_spawn_queue(PlayerID p) {
     Player *pl = &s.players[p];
     if (pl->spawn_queue_pos >= pl->spawn_queue_count) return;
@@ -569,7 +601,7 @@ static void sim_one_tick(void) {
     for (int i = 0; i < s.thing_count; i++) {
         Thing *t = &s.things[i];
         if (t->tag != THING_CREEP || !t->alive) continue;
-        if (!ct_spec(t->creep.type)->can_carry_flag) continue;
+        if (!s.players[t->owner].active_creeps[t->creep.type].can_carry_flag) continue;
         if (t->creep.has_flag) continue;
         for (int fi = 0; fi < 2; fi++) {
             Flag *f = &s.flags[fi];
@@ -653,7 +685,7 @@ static void sim_one_tick(void) {
     for (int i = 0; i < s.thing_count; i++) {
         Thing *c = &s.things[i];
         if (c->tag != THING_CREEP || !c->alive) continue;
-        int dmg = ct_spec(c->creep.type)->melee_damage;
+        int dmg = s.players[c->owner].active_creeps[c->creep.type].melee_damage;
         if (dmg <= 0) continue;
         for (int d = 0; d < 4; d++) {
             int nx = c->x + DX[d], ny = c->y + DY[d];

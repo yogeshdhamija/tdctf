@@ -142,7 +142,7 @@ void render_frame(const GameState *gs) {
         const Thing *t = &gs->things[i];
         if (t->tag != THING_CREEP || !t->alive) continue;
         creep_cnt[t->x][t->y][t->owner][t->creep.type]++;
-        int heavy = game_creep_type_melee_damage(t->creep.type) > 0;
+        int heavy = game_creep_active_melee_damage(t->owner, t->creep.type) > 0;
         uint32_t col = heavy ? player_color_dim(t->owner) : player_color(t->owner);
         int cx = t->x * CELL_SIZE + CELL_SIZE/2;
         int cy = t->y * CELL_SIZE + CELL_SIZE/2;
@@ -180,8 +180,12 @@ void render_frame(const GameState *gs) {
                 for (int ct = 0; ct < type_count; ct++) {
                     int n = creep_cnt[x][y][p][ct];
                     if (n == 0) continue;
+                    /* Live creeps of (player, type) must have a merged
+                     * active profile — they couldn't have spawned
+                     * otherwise — so the code lookup always resolves. */
+                    char code = game_creep_active_code((PlayerID)p, ct);
                     int w = snprintf(buf + used, sizeof(buf) - used,
-                                     "%d%c", n, game_creep_type_code(ct));
+                                     "%d%c", n, code);
                     if (w < 0 || (size_t)w >= sizeof(buf) - used) break;
                     used += w;
                 }

@@ -166,26 +166,27 @@ static void test_load_drops_unknown_tower_id(void) {
  * removed upgrades are dropped. */
 static const char TEST_CREEP_UPGRADES_REORDERED_CFG[] =
     "creep RETRIEVER\n"
-    "  code            R\n"
-    "  hp              20\n"
-    "  can_carry_flag  1\n"
-
     "creep SIEGE\n"
-    "  code            S\n"
-    "  hp              40\n"
-    "  melee_damage    5\n"
 
     /* New upgrade inserted at slot 0; RETRIEVER_1 is now at slot 1. */
     "upgrade BRAND_NEW\n"
     "  cost            5\n"
     "  research_turns  1\n"
-    "  spawn           RETRIEVER 1\n"
+    "  creep           RETRIEVER\n"
+    "  count           1\n"
+    "  code            R\n"
+    "  hp              20\n"
+    "  can_carry_flag  1\n"
     "  description     +1 New\n"
 
     "upgrade RETRIEVER_1\n"
     "  cost            30\n"
     "  research_turns  1\n"
-    "  spawn           RETRIEVER 1\n"
+    "  creep           RETRIEVER\n"
+    "  count           1\n"
+    "  code            R\n"
+    "  hp              20\n"
+    "  can_carry_flag  1\n"
     "  description     +1 Retriever\n"
 
     /* SIEGE_2 has been removed. */
@@ -193,7 +194,11 @@ static const char TEST_CREEP_UPGRADES_REORDERED_CFG[] =
     "upgrade RETRIEVER_2X\n"
     "  cost            60\n"
     "  research_turns  2\n"
-    "  spawn           RETRIEVER 2\n"
+    "  creep           RETRIEVER\n"
+    "  count           2\n"
+    "  code            R\n"
+    "  hp              20\n"
+    "  can_carry_flag  1\n"
     "  description     +2 Retrievers\n";
 
 static void test_load_survives_upgrade_reorder(void) {

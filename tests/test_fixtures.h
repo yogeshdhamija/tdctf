@@ -105,55 +105,71 @@ static const char TEST_TOWERS_CFG[] =
 
 /* Creep-type + creep-upgrade fixture for behavior tests. Mirrors the
  * slot-by-slot shape that test_game.c and test_render.c hard-code:
- *   creep type RETRIEVER: code R, hp 20, can_carry_flag
- *   creep type SIEGE:     code S, hp 40, melee_damage 5
+ *   creep type RETRIEVER (bare id)
+ *   creep type SIEGE     (bare id)
  *   slot 0: +1 retriever, 1-turn research
  *   slot 1: +2 siege,      1-turn research
  *   slot 2: +2 retrievers, 2-turn research, cost 60 (creep_upgrade_purchase_and_research)
  *   slot 3: +2 siege II,   2-turn research
  *   slot 4: +1 retriever, 0-turn research (instant) — exercises the
  *           research_turns=0 same-turn-spawn path
- * Slot order is what test_game.c references by index, so changes here must
- * keep those slots aligned. */
+ * Each upgrade carries its creep's full profile (code, hp,
+ * can_carry_flag/melee_damage). Slot order is what test_game.c references
+ * by index, so changes here must keep those slots aligned. RETRIEVER
+ * upgrades target the same type — under the override semantic the
+ * latest-declared completed one wins. */
 static const char TEST_CREEP_UPGRADES_CFG[] =
     "creep RETRIEVER\n"
-    "  code            R\n"
-    "  hp              20\n"
-    "  can_carry_flag  1\n"
-
     "creep SIEGE\n"
-    "  code            S\n"
-    "  hp              40\n"
-    "  melee_damage    5\n"
 
     "upgrade RETRIEVER_1\n"
     "  cost            30\n"
     "  research_turns  1\n"
-    "  spawn           RETRIEVER 1\n"
+    "  creep           RETRIEVER\n"
+    "  count           1\n"
+    "  code            R\n"
+    "  hp              20\n"
+    "  can_carry_flag  1\n"
     "  description     +1 Retriever\n"
 
     "upgrade SIEGE_2\n"
     "  cost            40\n"
     "  research_turns  1\n"
-    "  spawn           SIEGE 2\n"
+    "  creep           SIEGE\n"
+    "  count           2\n"
+    "  code            S\n"
+    "  hp              40\n"
+    "  melee_damage    5\n"
     "  description     +2 Siege\n"
 
     "upgrade RETRIEVER_2X\n"
     "  cost            60\n"
     "  research_turns  2\n"
-    "  spawn           RETRIEVER 2\n"
+    "  creep           RETRIEVER\n"
+    "  count           2\n"
+    "  code            R\n"
+    "  hp              20\n"
+    "  can_carry_flag  1\n"
     "  description     +2 Retrievers\n"
 
     "upgrade SIEGE_2_II\n"
     "  cost            70\n"
     "  research_turns  2\n"
-    "  spawn           SIEGE 2\n"
+    "  creep           SIEGE\n"
+    "  count           2\n"
+    "  code            S\n"
+    "  hp              40\n"
+    "  melee_damage    5\n"
     "  description     +2 Siege II\n"
 
     "upgrade RETRIEVER_INSTANT\n"
     "  cost            20\n"
     "  research_turns  0\n"
-    "  spawn           RETRIEVER 1\n"
+    "  creep           RETRIEVER\n"
+    "  count           1\n"
+    "  code            R\n"
+    "  hp              20\n"
+    "  can_carry_flag  1\n"
     "  description     +1 Retriever instant\n";
 
 /* Map fixture for behavior tests. Mirrors the 30x20 layout the suite was
@@ -206,40 +222,41 @@ static const char TEST_MAP_CORRIDOR_CFG[] =
     "[RRRRRRRRR..........\n"
     "RRRRRRRRRRb........]\n";
 
-/* Spawn-order fixture: two creep types with explicit spawn_order keys so
- * the queue's sort visibly disagrees with declaration order. RETRIEVER is
- * declared first but spawn_order=2; SIEGE is declared second but
- * spawn_order=1, so after sort SIEGE appears before RETRIEVER even when an
- * upgrade list adds them in the opposite order.
+/* Spawn-order fixture: two upgrades with explicit spawn_order keys so
+ * the queue's sort visibly disagrees with upgrade-buy order. RETRIEVER_1
+ * is bought first (slot 0) but has spawn_order=2; SIEGE_1 is bought
+ * second (slot 1) but has spawn_order=1, so after sort SIEGE appears
+ * before RETRIEVER.
  *
  * Slots used by tests:
- *   0: RETRIEVER_1 — +1 RETRIEVER, instant research
- *   1: SIEGE_1    — +1 SIEGE,     instant research
+ *   0: RETRIEVER_1 — +1 RETRIEVER, instant research, spawn_order 2
+ *   1: SIEGE_1    — +1 SIEGE,     instant research, spawn_order 1
  * Both instant so a single enter_sim() turn floats both into the queue
  * without needing a research-turn delay. */
 static const char TEST_CREEP_SPAWN_ORDER_CFG[] =
     "creep RETRIEVER\n"
-    "  code            R\n"
-    "  hp              20\n"
-    "  can_carry_flag  1\n"
-    "  spawn_order     2\n"
-
     "creep SIEGE\n"
-    "  code            S\n"
-    "  hp              40\n"
-    "  melee_damage    5\n"
-    "  spawn_order     1\n"
 
     "upgrade RETRIEVER_1\n"
     "  cost            10\n"
     "  research_turns  0\n"
-    "  spawn           RETRIEVER 1\n"
+    "  creep           RETRIEVER\n"
+    "  count           1\n"
+    "  code            R\n"
+    "  hp              20\n"
+    "  can_carry_flag  1\n"
+    "  spawn_order     2\n"
     "  description     +1 Retriever\n"
 
     "upgrade SIEGE_1\n"
     "  cost            10\n"
     "  research_turns  0\n"
-    "  spawn           SIEGE 1\n"
+    "  creep           SIEGE\n"
+    "  count           1\n"
+    "  code            S\n"
+    "  hp              40\n"
+    "  melee_damage    5\n"
+    "  spawn_order     1\n"
     "  description     +1 Siege\n";
 
 /* BANANA fixture for test_banana_creep_carries_and_attacks. A single
@@ -248,15 +265,16 @@ static const char TEST_CREEP_SPAWN_ORDER_CFG[] =
  * only buyable upgrade. */
 static const char TEST_CREEP_BANANA_CFG[] =
     "creep BANANA\n"
-    "  code            N\n"
-    "  hp              30\n"
-    "  can_carry_flag  1\n"
-    "  melee_damage    3\n"
 
     "upgrade BANANA_UPG\n"
     "  cost            50\n"
     "  research_turns  1\n"
-    "  spawn           BANANA 1\n"
+    "  creep           BANANA\n"
+    "  count           1\n"
+    "  code            N\n"
+    "  hp              30\n"
+    "  can_carry_flag  1\n"
+    "  melee_damage    3\n"
     "  description     +1 Banana\n";
 
 #endif

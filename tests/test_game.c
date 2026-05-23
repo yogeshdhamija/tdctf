@@ -825,6 +825,61 @@ static void test_creeps_spawn_one_per_tick(void) {
     CHECK(count_creeps(PLAYER_BLUE, sg) == 2);
 }
 
+/* ── 17d. Merge semantic: later upgrades overlay only set fields ──────── */
+
+/* The fixture TEST_CREEP_MERGE_CFG sets up two upgrades targeting the
+ * same creep type: slot 0 establishes the full profile
+ * (count=1, hp=25, melee_damage=5), slot 1 sets ONLY hp=50. With both
+ * completed, the merged profile must be (count=1 from slot 0,
+ * hp=50 from slot 1, melee_damage=5 from slot 0) — proving that
+ * unspecified fields inherit and specified fields override per-field. */
+static const char TEST_CREEP_MERGE_CFG[] =
+    "creep RUNNER\n"
+    "upgrade BASE\n"
+    "  cost            10\n"
+    "  research_turns  0\n"
+    "  creep           RUNNER\n"
+    "  count           1\n"
+    "  code            R\n"
+    "  hp              25\n"
+    "  melee_damage    5\n"
+    "  spawn_order     2\n"
+    "  description     base\n"
+    "upgrade BUFF_HP\n"
+    "  cost            10\n"
+    "  research_turns  0\n"
+    "  creep           RUNNER\n"
+    "  hp              50\n"
+    "  description     +HP only\n";
+
+static void test_merge_semantic_field_overlay(void) {
+    g_test = "merge_semantic_field_overlay";
+    game_init_with_configs_and_map(TEST_TOWERS_CFG, TEST_CREEP_MERGE_CFG, TEST_MAP_CFG);
+    int runner = game_creep_type_id("RUNNER");
+
+    /* Slot 0 alone: the full profile applies as-is. */
+    game_buy_creep_upgrade(0);
+    enter_sim();
+    CHECK(game_creep_is_active(PLAYER_RED, runner));
+    CHECK(game_creep_active_count(PLAYER_RED, runner)        == 1);
+    CHECK(game_creep_active_hp(PLAYER_RED, runner)           == 25);
+    CHECK(game_creep_active_melee_damage(PLAYER_RED, runner) == 5);
+    CHECK(game_creep_active_code(PLAYER_RED, runner)         == 'R');
+    CHECK(game_creep_active_spawn_order(PLAYER_RED, runner)  == 2);
+    run_sim_to_completion();
+
+    /* Add slot 1 (hp-only buff). Next sim's merged profile must show
+     * hp swapped to 50 while count / melee_damage / code / spawn_order
+     * carry over from slot 0 — pure per-field overlay. */
+    game_buy_creep_upgrade(1);
+    enter_sim();
+    CHECK(game_creep_active_hp(PLAYER_RED, runner)           == 50);
+    CHECK(game_creep_active_count(PLAYER_RED, runner)        == 1);
+    CHECK(game_creep_active_melee_damage(PLAYER_RED, runner) == 5);
+    CHECK(game_creep_active_code(PLAYER_RED, runner)         == 'R');
+    CHECK(game_creep_active_spawn_order(PLAYER_RED, runner)  == 2);
+}
+
 /* ── 18. Placement validity ──────────────────────────────────────────── */
 
 /* placement_valid rejects the obvious illegal cells (receptacle, at-home
@@ -880,6 +935,7 @@ int main(void) {
     test_banana_creep_carries_and_attacks();
     test_spawn_order_controls_queue();
     test_creeps_spawn_one_per_tick();
+    test_merge_semantic_field_overlay();
     test_placement_validity();
     printf("%d assertions, %d failures\n", g_assertions, g_fail);
     return g_fail ? 1 : 0;
