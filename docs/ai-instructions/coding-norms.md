@@ -1,5 +1,8 @@
 # Coding Norms
 
+## General Style
+- Variable names should be descriptive, and not shortened (exceptions may exist). Example: "grid_height" instead of "gh".
+
 ## Data-Oriented Style
 
 Use a data-oriented coding style, not object-oriented. Structs should be plain bags of data with no behavior attached. Functions should be organized into cohesive modules, but never bundled with the data they operate on. Keep data and logic separate.
