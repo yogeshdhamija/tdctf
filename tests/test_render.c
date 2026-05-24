@@ -1,4 +1,5 @@
 #include "render/render.h"
+#include "render/palette.h"
 #include "game/game.h"
 #include "game/tower_config.h"
 #include "platform/platform.h"
@@ -418,7 +419,7 @@ static void test_stacked_creep_count_badge(void) {
         }
     }
     CHECK(badge != NULL);
-    if (badge) CHECK(badge->color == 0x4477CC); /* BLUE */
+    if (badge) CHECK(badge->color == BLUE_LIVE);
 }
 
 /* The crowding badge only appears when more than one creep occupies a cell.

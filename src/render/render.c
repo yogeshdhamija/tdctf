@@ -1,4 +1,5 @@
 #include "render.h"
+#include "palette.h"
 #include "../game/creep_config.h"   /* CREEP_TYPE_MAX_COUNT for crowding-badge sizing */
 #include "../platform/platform.h"
 #include <stdio.h>
@@ -29,15 +30,15 @@ int render_button_at(int px, int py) {
 
 static uint32_t zone_color(ZoneType z) {
     switch (z) {
-        case ZONE_RED:    return 0x1A0808;
-        case ZONE_BLUE:   return 0x08081A;
-        case ZONE_DEBRIS: return 0x222222;
-        default:          return 0x141414;
+        case ZONE_RED:    return ZONE_RED_BG;
+        case ZONE_BLUE:   return ZONE_BLUE_BG;
+        case ZONE_DEBRIS: return ZONE_DEBRIS_BG;
+        default:          return ZONE_NEUTRAL_BG;
     }
 }
 
-static uint32_t player_color(PlayerID p)     { return p == PLAYER_RED ? 0xCC4444 : 0x4477CC; }
-static uint32_t player_color_dim(PlayerID p) { return p == PLAYER_RED ? 0x661818 : 0x182455; }
+static uint32_t player_color(PlayerID p)     { return p == PLAYER_RED ? RED_LIVE        : BLUE_LIVE; }
+static uint32_t player_color_dim(PlayerID p) { return p == PLAYER_RED ? RED_FOG_OF_WAR  : BLUE_FOG_OF_WAR; }
 
 /* Viewer derived from current phase/state by render_frame. Used by every
  * entity-drawing loop to consult the right per-player PlayerView. */
@@ -49,9 +50,9 @@ static int viewer_can_see(const GameState *gs, int x, int y) {
 
 static void draw_button(int id, int x, int y, int w, int h,
                         const char *label, int active, int enabled) {
-    uint32_t fill   = enabled ? (active ? 0x445588 : 0x2A2A2A) : 0x1A1A1A;
-    uint32_t border = enabled ? 0x888888 : 0x444444;
-    uint32_t txt    = enabled ? 0xEEEEEE : 0x666666;
+    uint32_t fill   = enabled ? (active ? BUTTON_ACTIVE_FILL : BUTTON_ENABLED_FILL) : BUTTON_DISABLED_FILL;
+    uint32_t border = enabled ? BUTTON_ENABLED_BORDER : BUTTON_DISABLED_BORDER;
+    uint32_t txt    = enabled ? BUTTON_ENABLED_TEXT   : BUTTON_DISABLED_TEXT;
     plat_fill_rect(x, y, w, h, fill);
     plat_draw_rect(x, y, w, h, border);
     plat_draw_text(x + 6, y + (h - 14) / 2 + 1, label, txt);
@@ -83,7 +84,7 @@ void render_frame(const GameState *gs) {
      * (zones, grid lines) and the sidebar buttons remain. */
     int hide_players = (gs->phase == PHASE_PRE_SIM);
 
-    plat_clear(0x111111);
+    plat_clear(CANVAS_BG);
 
     /* Grid zones — always drawn at full strength regardless of fog. Per
      * game-design.md §6, terrain/zones/landmarks are "the empty map" the
@@ -95,9 +96,9 @@ void render_frame(const GameState *gs) {
 
     /* Grid lines */
     for (int x = 0; x <= gs->grid_w; x++)
-        plat_draw_line(x * CELL_SIZE, 0, x * CELL_SIZE, gh, 0x303030);
+        plat_draw_line(x * CELL_SIZE, 0, x * CELL_SIZE, gh, GRID_LINE);
     for (int y = 0; y <= gs->grid_h; y++)
-        plat_draw_line(0, y * CELL_SIZE, gw, y * CELL_SIZE, 0x303030);
+        plat_draw_line(0, y * CELL_SIZE, gw, y * CELL_SIZE, GRID_LINE);
 
     if (!hide_players) {
     /* Receptacles */
@@ -172,8 +173,8 @@ void render_frame(const GameState *gs) {
                     plat_draw_text(px + 7, py + 8, buf, col);
                     if (t->hp < t->max_hp) {
                         int barw = (CELL_SIZE - 6) * t->hp / (t->max_hp > 0 ? t->max_hp : 1);
-                        plat_fill_rect(px + 3, py + CELL_SIZE - 4, CELL_SIZE - 6, 2, 0x440000);
-                        plat_fill_rect(px + 3, py + CELL_SIZE - 4, barw, 2, 0x44CC44);
+                        plat_fill_rect(px + 3, py + CELL_SIZE - 4, CELL_SIZE - 6, 2, HP_BAR_BG);
+                        plat_fill_rect(px + 3, py + CELL_SIZE - 4, barw, 2, HP_BAR_FILL);
                     }
                     continue;
                 }
@@ -201,7 +202,7 @@ void render_frame(const GameState *gs) {
         int y1 = t->y * CELL_SIZE + CELL_SIZE/2;
         int x2 = t->last_target_x * CELL_SIZE + CELL_SIZE/2;
         int y2 = t->last_target_y * CELL_SIZE + CELL_SIZE/2;
-        plat_draw_line(x1, y1, x2, y2, 0xFFEE88);
+        plat_draw_line(x1, y1, x2, y2, TOWER_BEAM);
     }
 
     /* Creeps. Visual differentiation: any creep type with melee_damage > 0
@@ -227,7 +228,7 @@ void render_frame(const GameState *gs) {
         int r  = heavy ? 7 : 5;
         plat_fill_circle(cx, cy, r, col);
         if (t->creep.slow_ticks > 0)
-            plat_draw_circle(cx, cy, r + 2, 0x88CCFF);
+            plat_draw_circle(cx, cy, r + 2, CREEP_SLOW_HALO);
         if (t->creep.has_flag) {
             PlayerID flag_owner = (t->owner == PLAYER_RED) ? PLAYER_BLUE : PLAYER_RED;
             uint32_t fcol = player_color(flag_owner);
@@ -286,7 +287,7 @@ void render_frame(const GameState *gs) {
                     used += w;
                 }
                 int label_w = (int)strlen(buf) * 8 + 2;
-                plat_fill_rect(x * CELL_SIZE + 1, by, label_w, 12, 0x000000);
+                plat_fill_rect(x * CELL_SIZE + 1, by, label_w, 12, CROWDING_BADGE_BG);
                 plat_draw_text(x * CELL_SIZE + 2, by, buf, player_color((PlayerID)p));
                 by += 13;
             }
@@ -296,35 +297,35 @@ void render_frame(const GameState *gs) {
     /* Selection highlight */
     if (gs->selected_x >= 0 && gs->selected_y >= 0) {
         plat_draw_rect(gs->selected_x * CELL_SIZE + 1, gs->selected_y * CELL_SIZE + 1,
-                       CELL_SIZE - 2, CELL_SIZE - 2, 0xFFFFFF);
+                       CELL_SIZE - 2, CELL_SIZE - 2, SELECTION_HIGHLIGHT);
     }
     } /* end if (!hide_players) */
 
     /* Placement-intent hint banner */
     if (gs->placement_intent >= 0 && (gs->phase == PHASE_PLAN_RED || gs->phase == PHASE_PLAN_BLUE)) {
-        plat_fill_rect(0, 0, gw, 18, 0x222244);
+        plat_fill_rect(0, 0, gw, 18, PLACEMENT_BANNER_BG);
         snprintf(buf, sizeof(buf), "Click grid to place %s  (click button again to cancel)",
                  game_tower_name(gs->placement_intent));
-        plat_draw_text(6, 2, buf, 0xFFEE88);
+        plat_draw_text(6, 2, buf, PLACEMENT_BANNER_TEXT);
     }
 
     /* ── Sidebar ── */
     int sx = gw;
-    plat_fill_rect(sx, 0, SIDEBAR_W, gh, 0x1C1C1C);
-    plat_draw_line(sx, 0, sx, gh, 0x444444);
+    plat_fill_rect(sx, 0, SIDEBAR_W, gh, SIDEBAR_BG);
+    plat_draw_line(sx, 0, sx, gh, SIDEBAR_BORDER);
     int line = 12;
 
     snprintf(buf, sizeof(buf), "TURN %d", gs->turn);
-    plat_draw_text(sx + 10, line, buf, 0xEEEEEE);
+    plat_draw_text(sx + 10, line, buf, TEXT_PRIMARY);
     line += 20;
 
     const char *phase_str = "—";
-    uint32_t phase_col = 0xCCCCCC;
+    uint32_t phase_col = TEXT_SECONDARY;
     if (gs->phase == PHASE_PLAN_RED)  { phase_str = "PLAN: RED";  phase_col = player_color(PLAYER_RED); }
     if (gs->phase == PHASE_PLAN_BLUE) { phase_str = "PLAN: BLUE"; phase_col = player_color(PLAYER_BLUE); }
-    if (gs->phase == PHASE_PRE_SIM)   { phase_str = "CHOOSE VIEW"; phase_col = 0xFFCC44; }
-    if (gs->phase == PHASE_SIMULATE)  { phase_str = "SIMULATING"; phase_col = 0xFFCC44; }
-    if (gs->phase == PHASE_GAME_OVER) { phase_str = "GAME OVER";  phase_col = 0xFFFFFF; }
+    if (gs->phase == PHASE_PRE_SIM)   { phase_str = "CHOOSE VIEW"; phase_col = PHASE_LABEL_HIGHLIGHT; }
+    if (gs->phase == PHASE_SIMULATE)  { phase_str = "SIMULATING"; phase_col = PHASE_LABEL_HIGHLIGHT; }
+    if (gs->phase == PHASE_GAME_OVER) { phase_str = "GAME OVER";  phase_col = PHASE_LABEL_GAME_OVER; }
     plat_draw_text(sx + 10, line, phase_str, phase_col);
     line += 24;
 
@@ -343,7 +344,7 @@ void render_frame(const GameState *gs) {
             int current = (gs->phase == PHASE_PLAN_RED && p == PLAYER_RED) ||
                           (gs->phase == PHASE_PLAN_BLUE && p == PLAYER_BLUE);
             if (current)
-                plat_fill_rect(sx + 4, line - 5, SIDEBAR_W - 8, 22, 0x2A2A40);
+                plat_fill_rect(sx + 4, line - 5, SIDEBAR_W - 8, 22, CURRENT_PLAYER_HIGHLIGHT);
             if ((PlayerID)p == g_viewer) {
                 snprintf(buf, sizeof(buf), "%s  $%d  +%d",
                          p == PLAYER_RED ? "RED" : "BLUE",
@@ -361,7 +362,7 @@ void render_frame(const GameState *gs) {
     if (is_plan) {
         PlayerID p = game_planning_player();
 
-        plat_draw_text(sx + 10, line, "PLACE TOWER", 0xBBBBBB);
+        plat_draw_text(sx + 10, line, "PLACE TOWER", TEXT_SECTION_HEADER);
         line += 18;
         for (int i = 0; i < game_tower_count(); i++) {
             int cost    = game_tower_cost(i);
@@ -376,19 +377,19 @@ void render_frame(const GameState *gs) {
         }
         line += 4;
 
-        plat_draw_text(sx + 10, line, "CREEP UPGRADES", 0xBBBBBB);
+        plat_draw_text(sx + 10, line, "CREEP UPGRADES", TEXT_SECTION_HEADER);
         line += 18;
         for (int i = 0; i < gs->players[p].creep_upgrade_count; i++) {
             const CreepUpgrade *u = &gs->players[p].creep_upgrades[i];
             const char *desc = game_creep_upgrade_description(i);
             if (u->completed) {
                 snprintf(buf, sizeof(buf), "%s  READY", desc);
-                plat_fill_rect(sx + 10, line, SIDEBAR_W - 20, 20, 0x183018);
-                plat_draw_text(sx + 14, line + 3, buf, 0x66CC66);
+                plat_fill_rect(sx + 10, line, SIDEBAR_W - 20, 20, UPGRADE_READY_BG);
+                plat_draw_text(sx + 14, line + 3, buf, UPGRADE_READY_TEXT);
             } else if (u->purchased) {
                 snprintf(buf, sizeof(buf), "%s  %dt", desc, u->turns_remaining);
-                plat_fill_rect(sx + 10, line, SIDEBAR_W - 20, 20, 0x252535);
-                plat_draw_text(sx + 14, line + 3, buf, 0xAAAACC);
+                plat_fill_rect(sx + 10, line, SIDEBAR_W - 20, 20, UPGRADE_PURCHASED_BG);
+                plat_draw_text(sx + 14, line + 3, buf, UPGRADE_PURCHASED_TEXT);
             } else {
                 int cost  = game_creep_upgrade_cost(i);
                 int turns = game_creep_upgrade_research_turns(i);
@@ -414,7 +415,7 @@ void render_frame(const GameState *gs) {
                 snprintf(buf, sizeof(buf), "SEL %c%d @ %d,%d",
                          game_tower_code(t->tower.type), t->tower.level,
                          t->x, t->y);
-                plat_draw_text(sx + 10, line, buf, 0xEEEEEE);
+                plat_draw_text(sx + 10, line, buf, TEXT_PRIMARY);
                 line += 18;
                 if (t->tower.build_turns > 0)
                     snprintf(buf, sizeof(buf), "  HP %d/%d  BUILDING %dt",
@@ -422,7 +423,7 @@ void render_frame(const GameState *gs) {
                 else
                     snprintf(buf, sizeof(buf), "  HP %d/%d  READY",
                              t->hp, t->max_hp);
-                plat_draw_text(sx + 10, line, buf, 0x999999);
+                plat_draw_text(sx + 10, line, buf, TEXT_MUTED);
                 line += 22;
                 if (t->owner == p) {
                     int max_lvl = game_tower_max_level(t->tower.type);
@@ -442,7 +443,7 @@ void render_frame(const GameState *gs) {
     } else if (gs->phase == PHASE_PRE_SIM) {
         /* Two committal buttons — clicking either sets sim_viewer and
          * kicks off the actual simulation. */
-        plat_draw_text(sx + 10, line, "Watch the sim as:", 0xCCCCCC);
+        plat_draw_text(sx + 10, line, "Watch the sim as:", TEXT_SECONDARY);
         line += 20;
         draw_button(BTN_START_SIM_AS_RED,  sx + 10, line, SIDEBAR_W - 20, 24,
                     "View RED sim", 0, 1);
@@ -451,7 +452,7 @@ void render_frame(const GameState *gs) {
                     "View BLUE sim", 0, 1);
     } else if (gs->phase == PHASE_SIMULATE) {
         snprintf(buf, sizeof(buf), "Tick %d / %d", gs->sim_tick, SIM_TICKS_PER_TURN);
-        plat_draw_text(sx + 10, line, buf, 0xCCCCCC);
+        plat_draw_text(sx + 10, line, buf, TEXT_SECONDARY);
         line += 20;
         snprintf(buf, sizeof(buf), "View: %s", g_viewer == PLAYER_RED ? "RED" : "BLUE");
         plat_draw_text(sx + 10, line, buf, player_color(g_viewer));
@@ -465,13 +466,13 @@ void render_frame(const GameState *gs) {
     }
 
     if (gs->status_ttl > 0 && gs->status_msg[0]) {
-        plat_fill_rect(sx + 4, gh - 22, SIDEBAR_W - 8, 18, 0x402810);
-        plat_draw_text(sx + 10, gh - 50, gs->status_msg, 0xFFCC66);
+        plat_fill_rect(sx + 4, gh - 22, SIDEBAR_W - 8, 18, STATUS_MSG_BG);
+        plat_draw_text(sx + 10, gh - 50, gs->status_msg, STATUS_MSG_TEXT);
     }
 
     /* Frame stats overlay */
     FrameStats fs;
     plat_get_frame_stats(&fs);
     snprintf(buf, sizeof(buf), "FPS:%.0f  MaxLag:%.0fms", fs.fps, fs.max_lag_ms);
-    plat_draw_text(gw + 10, gh - 16, buf, 0x888888);
+    plat_draw_text(gw + 10, gh - 16, buf, TEXT_FAINT);
 }

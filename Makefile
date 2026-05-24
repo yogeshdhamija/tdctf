@@ -92,7 +92,7 @@ $(TEST_PATHING_BIN): $(TEST_PATHING_SRCS) $(TOWER_CONFIG_HDR) $(CREEP_CONFIG_HDR
 $(TEST_GAME_BIN): $(TEST_GAME_SRCS) $(TOWER_CONFIG_HDR) $(CREEP_CONFIG_HDR) $(MAP_CONFIG_HDR) src/game/game.h src/game/tower_config.h src/game/creep_config.h src/game/map_config.h tests/test_fixtures.h | build
 	cc -O0 -g -Wall -Wextra $(INCLUDES) -Itests $(TEST_GAME_SRCS) -o $(TEST_GAME_BIN)
 
-$(TEST_RENDER_BIN): $(TEST_RENDER_SRCS) $(TOWER_CONFIG_HDR) $(CREEP_CONFIG_HDR) $(MAP_CONFIG_HDR) src/game/game.h src/render/render.h src/platform/platform.h tests/test_fixtures.h | build
+$(TEST_RENDER_BIN): $(TEST_RENDER_SRCS) $(TOWER_CONFIG_HDR) $(CREEP_CONFIG_HDR) $(MAP_CONFIG_HDR) src/game/game.h src/render/render.h src/render/palette.h src/platform/platform.h tests/test_fixtures.h | build
 	cc -O0 -g -Wall -Wextra $(INCLUDES) -Itests $(TEST_RENDER_SRCS) -o $(TEST_RENDER_BIN)
 
 $(TEST_TOWER_CONFIG_BIN): $(TEST_TOWER_CONFIG_SRCS) $(TOWER_CONFIG_HDR) src/game/tower_config.h | build
