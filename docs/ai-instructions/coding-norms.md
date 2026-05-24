@@ -2,6 +2,7 @@
 
 ## General Style
 - Variable names should be descriptive, and not shortened (exceptions may exist). Example: "grid_height" instead of "gh".
+- Variables should be declared close to their first use, rather than at the top of the function.
 
 ## Data-Oriented Style
 
