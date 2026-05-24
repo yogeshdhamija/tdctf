@@ -857,6 +857,20 @@ static void sim_one_tick(void) {
         }
     }
 
+    /* Fog refresh runs before deaths are resolved so creep_mem captures
+     * each doomed creep at the cell it actually died on. At this point a
+     * lethally-hit creep still has alive==1 and tag==THING_CREEP — the
+     * resolve-deaths loop below is what flips those — so the existing
+     * creep_mem loop in fog_refresh records its post-move position. This
+     * also keeps the corpse, the tower beam target (last_target_*), and a
+     * dropped flag's cell all agreeing on the death cell. The post-death
+     * fog state (vis_now / tower memory) is one tick stale until the next
+     * sim_one_tick's refresh, which is cosmetically harmless: the world is
+     * static between sim ticks, and the renderer's "visible, no tower live
+     * → nothing" path covers freshly-empty cells without consulting the
+     * stale memory. */
+    fog_refresh_all();
+
     /* Resolve deaths */
     for (int i = 0; i < s.thing_count; i++) {
         Thing *t = &s.things[i];
@@ -875,7 +889,6 @@ static void sim_one_tick(void) {
         t->tag   = THING_NONE;
     }
 
-    fog_refresh_all();
     s.sim_tick++;
 }
 

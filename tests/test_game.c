@@ -1145,6 +1145,49 @@ static void test_fog_creep_memory_survives_sim_end(void) {
     CHECK(found);
 }
 
+/* Corpse render position must equal the death cell, not the cell the creep
+ * was on the previous tick. Reuses the corridor + gunner timing from
+ * test_flag_drop_on_death: the carrier dies one cell beyond the flag's home
+ * after pickup, so the dropped flag lands at the death cell. We assert
+ * RED's creep_mem records the BLUE corpse at that same cell — i.e. the
+ * corpse, dropped flag, and beam target all agree on where the creep died. */
+static void test_corpse_at_death_cell(void) {
+    g_test = "corpse_at_death_cell";
+    game_init_with_configs_and_map(TEST_TOWERS_CFG, TEST_CREEP_UPGRADES_CFG, TEST_MAP_CORRIDOR_CFG);
+    const GameState *s = game_get_state();
+
+    game_set_placement(game_tower_id("GUNNER"));
+    game_grid_click(3, 1);
+
+    game_lock_in();              /* → PLAN_BLUE */
+    game_buy_creep_upgrade(0);   /* BLUE +1 retriever */
+    game_lock_in();              /* → SIMULATE turn 1 (no creeps yet) */
+    game_choose_sim_view(PLAYER_RED);
+    run_sim_to_completion();
+
+    enter_sim();                 /* SIMULATE turn 2: the carrier sim */
+    run_sim_to_completion();
+
+    /* Sanity: the carrier died with the flag and dropped it (mid-sim, not
+     * via end_simulation — the latter would leave at_home set). */
+    CHECK(!s->flags[PLAYER_RED].at_home);
+    CHECK(s->flags[PLAYER_RED].carried_by == -1);
+
+    int death_x = s->flags[PLAYER_RED].x;
+    int death_y = s->flags[PLAYER_RED].y;
+
+    int found = 0;
+    for (int i = 0; i < MAX_THINGS; i++) {
+        const FogCreepMemory *cm = &s->views[PLAYER_RED].creep_mem[i];
+        if (!cm->valid) continue;
+        if (cm->owner != PLAYER_BLUE) continue;
+        CHECK(cm->x == death_x);
+        CHECK(cm->y == death_y);
+        found = 1;
+    }
+    CHECK(found);
+}
+
 /* The PRE_SIM viewer choice commits to a sim_viewer and starts the sim.
  * No-op outside PRE_SIM. */
 static void test_fog_choose_sim_view(void) {
@@ -1203,6 +1246,7 @@ int main(void) {
     test_fog_completed_tower_visible();
     test_fog_upgrade_is_silent();
     test_fog_creep_memory_survives_sim_end();
+    test_corpse_at_death_cell();
     test_fog_choose_sim_view();
     printf("%d assertions, %d failures\n", g_assertions, g_fail);
     return g_fail ? 1 : 0;
