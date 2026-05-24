@@ -28,12 +28,12 @@ int render_button_at(int px, int py) {
     return BTN_NONE;
 }
 
-static uint32_t zone_color(ZoneType z) {
+static uint32_t zone_color(ZoneType z, int live) {
     switch (z) {
-        case ZONE_RED:    return ZONE_RED_BG;
-        case ZONE_BLUE:   return ZONE_BLUE_BG;
-        case ZONE_DEBRIS: return ZONE_DEBRIS_BG;
-        default:          return ZONE_NEUTRAL_BG;
+        case ZONE_RED:    return live ? ZONE_RED_BG_LIVE     : ZONE_RED_BG_FOG_OF_WAR;
+        case ZONE_BLUE:   return live ? ZONE_BLUE_BG_LIVE    : ZONE_BLUE_BG_FOG_OF_WAR;
+        case ZONE_DEBRIS: return live ? ZONE_DEBRIS_BG_LIVE  : ZONE_DEBRIS_BG_FOG_OF_WAR;
+        default:          return live ? ZONE_NEUTRAL_BG_LIVE : ZONE_NEUTRAL_BG_FOG_OF_WAR;
     }
 }
 
@@ -86,13 +86,18 @@ void render_frame(const GameState *gs) {
 
     plat_clear(CANVAS_BG);
 
-    /* Grid zones — always drawn at full strength regardless of fog. Per
-     * game-design.md §6, terrain/zones/landmarks are "the empty map" the
-     * player always sees; fog only hides entities (towers, creeps). */
+    /* Grid zones — per game-design.md §6, terrain/zones/landmarks are "the
+     * empty map" the player always sees, so we paint every cell. But cells
+     * outside the viewer's current vision get the muted FOG_OF_WAR shade so
+     * stale-vision regions are visually distinct from live ones. During
+     * PRE_SIM no viewer is committed, so render uniformly fog (no leak). */
+    int viewer_committed = (gs->phase != PHASE_PRE_SIM);
     for (int x = 0; x < gs->grid_w; x++)
-        for (int y = 0; y < gs->grid_h; y++)
+        for (int y = 0; y < gs->grid_h; y++) {
+            int live = viewer_committed && viewer_can_see(gs, x, y);
             plat_fill_rect(x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE,
-                           zone_color(gs->grid[x][y].zone));
+                           zone_color(gs->grid[x][y].zone, live));
+        }
 
     /* Grid lines */
     for (int x = 0; x <= gs->grid_w; x++)

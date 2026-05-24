@@ -10,11 +10,19 @@
 #define SIDEBAR_BG                 0x1C1C1C
 #define SIDEBAR_BORDER             0x444444
 
-/* === Grid === */
-#define ZONE_RED_BG                0x1A0808
-#define ZONE_BLUE_BG               0x08081A
-#define ZONE_DEBRIS_BG             0x222222
-#define ZONE_NEUTRAL_BG            0x141414
+/* === Grid ===
+ * LIVE       = cell currently in the viewer's vision (vis_now).
+ * FOG_OF_WAR = cell outside vision — entity state shown here, if any, is
+ *              stale fog memory, so the background is muted to make that
+ *              obvious. Same LIVE/FOG_OF_WAR split as the player colors.   */
+#define ZONE_RED_BG_LIVE           0x331111
+#define ZONE_RED_BG_FOG_OF_WAR     0x1A0808
+#define ZONE_BLUE_BG_LIVE          0x111133
+#define ZONE_BLUE_BG_FOG_OF_WAR    0x08081A
+#define ZONE_DEBRIS_BG_LIVE        0x383838
+#define ZONE_DEBRIS_BG_FOG_OF_WAR  0x222222
+#define ZONE_NEUTRAL_BG_LIVE       0x222222
+#define ZONE_NEUTRAL_BG_FOG_OF_WAR 0x141414
 #define GRID_LINE                  0x303030
 
 /* === Per-player entity colors ===

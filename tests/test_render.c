@@ -26,7 +26,29 @@
 
 void plat_clear(uint32_t c)                                              { (void)c; }
 void plat_draw_rect(int x, int y, int w, int h, uint32_t c)              { (void)x;(void)y;(void)w;(void)h;(void)c; }
-void plat_fill_rect(int x, int y, int w, int h, uint32_t c)              { (void)x;(void)y;(void)w;(void)h;(void)c; }
+/* Captured plat_fill_rect calls — needed so tests can assert per-cell zone
+ * background colors (e.g. LIVE vs FOG_OF_WAR under fog of war). Reset
+ * between renders via reset_fill_log(). */
+typedef struct { int x, y, w, h; uint32_t color; } FillCall;
+#define MAX_FILL_CALLS 2048
+static FillCall g_fill_calls[MAX_FILL_CALLS];
+static int      g_fill_call_count;
+static void reset_fill_log(void) { g_fill_call_count = 0; }
+void plat_fill_rect(int x, int y, int w, int h, uint32_t c) {
+    if (g_fill_call_count >= MAX_FILL_CALLS) return;
+    FillCall *fc = &g_fill_calls[g_fill_call_count++];
+    fc->x = x; fc->y = y; fc->w = w; fc->h = h; fc->color = c;
+}
+/* Look up the fill color at an exact rect. The zone-paint loop always emits
+ * one fill at (cell_x*CELL_SIZE, cell_y*CELL_SIZE, CELL_SIZE, CELL_SIZE), so
+ * an exact match disambiguates it from later overlays (HP bars, badges). */
+static uint32_t fill_color_at(int x, int y, int w, int h) {
+    for (int i = 0; i < g_fill_call_count; i++) {
+        const FillCall *fc = &g_fill_calls[i];
+        if (fc->x == x && fc->y == y && fc->w == w && fc->h == h) return fc->color;
+    }
+    return 0;
+}
 void plat_draw_circle(int cx, int cy, int r, uint32_t c)                 { (void)cx;(void)cy;(void)r;(void)c; }
 void plat_fill_circle(int cx, int cy, int r, uint32_t c)                 { (void)cx;(void)cy;(void)r;(void)c; }
 void plat_draw_line(int x1, int y1, int x2, int y2, uint32_t c)          { (void)x1;(void)y1;(void)x2;(void)y2;(void)c; }
@@ -337,6 +359,31 @@ static void test_fog_hides_enemy_tower_glyph(void) {
     }
 }
 
+/* Fog of war: the grid cell background uses ZONE_*_BG_LIVE for cells in
+ * the viewer's vision and ZONE_*_BG_FOG_OF_WAR for cells outside it, so the
+ * player can see at a glance which regions are live vs stale. RED places a
+ * GUNNER (vision=2) at (3, 4) in their own zone; cells within Chebyshev
+ * distance 2 (e.g. the tower cell itself and (5, 4)) should render LIVE,
+ * and a far cell in the same RED zone (9, 4) should render FOG_OF_WAR. */
+static void test_fog_dims_grid_outside_vision(void) {
+    g_test = "fog_dims_grid_outside_vision";
+    game_init_with_configs_and_map(TEST_TOWERS_CFG, TEST_CREEP_UPGRADES_CFG, TEST_MAP_CFG);
+    /* RED zone is x < 10. Place a GUNNER at (3, 4) — vision=2 illuminates
+     * a 5×5 Chebyshev box centred on the tower. */
+    game_set_placement(game_tower_id("GUNNER"));
+    game_grid_click(3, 4);
+
+    reset_fill_log();
+    render_frame(game_get_state());
+
+    uint32_t tower_cell    = fill_color_at(3 * CELL_SIZE, 4 * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+    uint32_t in_vision     = fill_color_at(5 * CELL_SIZE, 4 * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+    uint32_t out_of_vision = fill_color_at(9 * CELL_SIZE, 4 * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+    CHECK(tower_cell    == ZONE_RED_BG_LIVE);
+    CHECK(in_vision     == ZONE_RED_BG_LIVE);
+    CHECK(out_of_vision == ZONE_RED_BG_FOG_OF_WAR);
+}
+
 /* Fog of war: the enemy's resource/income block in the sidebar is masked
  * — the viewer sees their own real numbers but only "$???" for the opponent. */
 static void test_fog_masks_enemy_sidebar_resources(void) {
@@ -493,6 +540,7 @@ int main(void) {
     test_pre_sim_offers_view_choice();
     test_pre_sim_hides_all_player_state();
     test_fog_hides_enemy_tower_glyph();
+    test_fog_dims_grid_outside_vision();
     test_fog_masks_enemy_sidebar_resources();
     test_stacked_creep_count_badge();
     test_single_creep_no_badge();
