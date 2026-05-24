@@ -39,10 +39,14 @@ static void test_retriever_walks_full_loop_and_wins(void) {
     game_lock_in();                         /* → PLAN_BLUE */
     game_lock_in();                         /* → PRE_SIM   */
     game_choose_sim_view(PLAYER_RED);       /* → SIMULATE turn 1 (upgrade still researching) */
-    /* Drain the quiet sim. */
+    /* Drain the quiet sim. The sim now parks at POST_SIM waiting for a
+     * Continue press (hand-off gate), so dismiss it here. */
     for (int i = 0; i < SIM_TICKS_PER_TURN * SIM_FRAMES_PER_TICK + 200; i++) {
         game_frame();
-        if (game_get_state()->phase == PHASE_PLAN_RED) break;
+        if (game_get_state()->phase == PHASE_POST_SIM) {
+            game_continue_to_next_turn();
+            break;
+        }
     }
     game_lock_in(); game_lock_in();
     game_choose_sim_view(PLAYER_RED);       /* → SIMULATE turn 2: retriever spawns */

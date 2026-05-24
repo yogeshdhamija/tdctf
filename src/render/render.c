@@ -69,7 +69,7 @@ void render_frame(const GameState *gs) {
      *   PLAN_RED                 → RED
      *   PLAN_BLUE                → BLUE
      *   PRE_SIM / SIMULATE /
-     *   GAME_OVER                → gs->sim_viewer (chosen via the
+     *   POST_SIM / GAME_OVER     → gs->sim_viewer (chosen via the
      *                              "View RED sim" / "View BLUE sim"
      *                              buttons at PRE_SIM time) */
     if (gs->phase == PHASE_PLAN_BLUE) g_viewer = PLAYER_BLUE;
@@ -330,6 +330,7 @@ void render_frame(const GameState *gs) {
     if (gs->phase == PHASE_PLAN_BLUE) { phase_str = "PLAN: BLUE"; phase_col = player_color(PLAYER_BLUE); }
     if (gs->phase == PHASE_PRE_SIM)   { phase_str = "CHOOSE VIEW"; phase_col = PHASE_LABEL_HIGHLIGHT; }
     if (gs->phase == PHASE_SIMULATE)  { phase_str = "SIMULATING"; phase_col = PHASE_LABEL_HIGHLIGHT; }
+    if (gs->phase == PHASE_POST_SIM)  { phase_str = "SIM ENDED";  phase_col = PHASE_LABEL_HIGHLIGHT; }
     if (gs->phase == PHASE_GAME_OVER) { phase_str = "GAME OVER";  phase_col = PHASE_LABEL_GAME_OVER; }
     plat_draw_text(sx + 10, line, phase_str, phase_col);
     line += 24;
@@ -461,6 +462,15 @@ void render_frame(const GameState *gs) {
         line += 20;
         snprintf(buf, sizeof(buf), "View: %s", g_viewer == PLAYER_RED ? "RED" : "BLUE");
         plat_draw_text(sx + 10, line, buf, player_color(g_viewer));
+    } else if (gs->phase == PHASE_POST_SIM) {
+        /* Hand-off gate. The URL still holds the PRE_SIM snapshot from
+         * Blue's lock-in — Blue copies it to Red here, *before* the
+         * Continue click reveals Red's planning view on this device. */
+        snprintf(buf, sizeof(buf), "View: %s", g_viewer == PLAYER_RED ? "RED" : "BLUE");
+        plat_draw_text(sx + 10, line, buf, player_color(g_viewer));
+        line += 22;
+        draw_button(BTN_CONTINUE_TO_NEXT_TURN, sx + 10, line, SIDEBAR_W - 20, 24,
+                    "Continue to Red's turn", 0, 1);
     } else if (gs->phase == PHASE_GAME_OVER) {
         snprintf(buf, sizeof(buf), "%s WINS!",
                  gs->winner == PLAYER_RED ? "RED" : "BLUE");

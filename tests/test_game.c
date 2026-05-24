@@ -37,11 +37,16 @@ static void enter_sim(void) {
 }
 
 /* Advance frames until we're back in the PLAN_RED phase (i.e. the current
- * simulation has wrapped). Bounded so a regression can't hang the test. */
+ * simulation has wrapped). Bounded so a regression can't hang the test.
+ * The sim now parks in PHASE_POST_SIM waiting for an explicit continue
+ * (hand-off gate), so commit that transition here so callers see the
+ * familiar PLAN_RED end state. */
 static void run_sim_to_completion(void) {
     for (int i = 0; i < SIM_TICKS_PER_TURN * SIM_FRAMES_PER_TICK + 200; i++) {
         game_frame();
-        if (game_get_state()->phase == PHASE_PLAN_RED) return;
+        Phase ph = game_get_state()->phase;
+        if (ph == PHASE_POST_SIM) { game_continue_to_next_turn(); return; }
+        if (ph == PHASE_PLAN_RED || ph == PHASE_GAME_OVER) return;
     }
 }
 
@@ -102,6 +107,66 @@ static void test_phase_transitions(void) {
     /* Base income (+0/turn) applied to both players at sim end. */
     CHECK(s->players[PLAYER_RED].resources == 100);
     CHECK(s->players[PLAYER_BLUE].resources == 100);
+}
+
+/* Sim ends into POST_SIM, not directly PLAN_RED. The hand-off gate lets
+ * the watching player forward the snapshot URL (still PRE_SIM) before the
+ * screen reveals Red's planning view. End-of-turn bookkeeping (income,
+ * upgrade research advance, turn increment) must be held until Continue. */
+static void test_post_sim_gate(void) {
+    g_test = "post_sim_gate";
+    game_init_with_configs_and_map(TEST_TOWERS_CFG, TEST_CREEP_UPGRADES_CFG, TEST_MAP_CFG);
+    const GameState *s = game_get_state();
+
+    /* Continue is a no-op outside POST_SIM. */
+    game_continue_to_next_turn();
+    CHECK(s->phase == PHASE_PLAN_RED);
+
+    /* Buy a research-bearing upgrade so we can verify the turn-bookkeeping
+     * advance is held until Continue. RETRIEVER_RESEARCH research_turns
+     * is >= 1 in the test fixture. */
+    int up = -1;
+    for (int i = 0; i < game_creep_upgrade_total(); i++)
+        if (game_creep_upgrade_research_turns(i) > 0 &&
+            game_creep_upgrade_requires(i) < 0) { up = i; break; }
+    CHECK(up >= 0);
+    int up_cost = game_creep_upgrade_cost(up);
+    int up_turns = game_creep_upgrade_research_turns(up);
+    game_buy_creep_upgrade(up);
+    int red_res_after_buy = s->players[PLAYER_RED].resources;
+    CHECK(red_res_after_buy == 100 - up_cost);
+    CHECK(s->players[PLAYER_RED].creep_upgrades[up].purchased == 1);
+    CHECK(s->players[PLAYER_RED].creep_upgrades[up].turns_remaining == up_turns);
+
+    enter_sim();
+    CHECK(s->phase == PHASE_SIMULATE);
+    int prev_turn = s->turn;
+
+    /* Drive frames until the sim parks. Must land in POST_SIM, not auto
+     * roll into PLAN_RED. */
+    for (int i = 0; i < SIM_TICKS_PER_TURN * SIM_FRAMES_PER_TICK + 200; i++) {
+        game_frame();
+        if (s->phase == PHASE_POST_SIM) break;
+    }
+    CHECK(s->phase == PHASE_POST_SIM);
+    CHECK(s->turn == prev_turn);
+    /* Bookkeeping must not have run yet. */
+    CHECK(s->players[PLAYER_RED].resources == red_res_after_buy);
+    CHECK(s->players[PLAYER_RED].creep_upgrades[up].turns_remaining == up_turns);
+
+    /* Holding in POST_SIM across multiple frames is stable — no auto
+     * transition. */
+    for (int i = 0; i < 30; i++) game_frame();
+    CHECK(s->phase == PHASE_POST_SIM);
+    CHECK(s->turn == prev_turn);
+
+    game_continue_to_next_turn();
+    CHECK(s->phase == PHASE_PLAN_RED);
+    CHECK(s->turn == prev_turn + 1);
+    /* Income (zero from no completed resource towers) plus one turn of
+     * upgrade research are exactly the end_simulation effects. */
+    CHECK(s->players[PLAYER_RED].resources == red_res_after_buy);
+    CHECK(s->players[PLAYER_RED].creep_upgrades[up].turns_remaining == up_turns - 1);
 }
 
 /* ── 3. Tower placement: cost, attributes, intent clearing ──────────── */
@@ -1106,6 +1171,7 @@ static void test_fog_choose_sim_view(void) {
 
 int main(void) {
     test_phase_transitions();
+    test_post_sim_gate();
     test_tower_placement_basics();
     test_placement_zone_restrictions();
     test_placement_insufficient_resources();

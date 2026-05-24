@@ -22,8 +22,16 @@ typedef enum { PLAYER_RED = 0, PLAYER_BLUE = 1 } PlayerID;
 /* PHASE_PRE_SIM sits between PLAN_BLUE and SIMULATE: both players have
  * locked in, but the sim hasn't started — instead the screen offers a
  * choice of whose view to watch the simulation from. game_choose_sim_view
- * commits the choice and kicks off SIMULATE. */
-typedef enum { PHASE_PLAN_RED, PHASE_PLAN_BLUE, PHASE_PRE_SIM, PHASE_SIMULATE, PHASE_GAME_OVER } Phase;
+ * commits the choice and kicks off SIMULATE.
+ *
+ * PHASE_POST_SIM sits between SIMULATE and PLAN_RED: the sim has finished
+ * but the end-of-turn bookkeeping (income, upgrade research advance, turn
+ * increment, transition to PLAN_RED) is held until the viewer explicitly
+ * clicks Continue. This gives the local player (typically Blue, having
+ * just watched their sim) the chance to hand off the snapshot URL — still
+ * the PRE_SIM one pushed at their lock-in — before the screen reveals
+ * Red's planning view. game_continue_to_next_turn commits. */
+typedef enum { PHASE_PLAN_RED, PHASE_PLAN_BLUE, PHASE_PRE_SIM, PHASE_SIMULATE, PHASE_POST_SIM, PHASE_GAME_OVER } Phase;
 
 typedef enum { THING_NONE = 0, THING_TOWER, THING_CREEP } ThingType;
 
@@ -256,6 +264,10 @@ int              game_fog_visible_at(PlayerID viewer, int x, int y);
 /* Commit a viewer choice from PHASE_PRE_SIM and start the simulation.
  * No-op if not in PHASE_PRE_SIM. */
 void             game_choose_sim_view(PlayerID viewer);
+
+/* Commit the end-of-turn bookkeeping held by PHASE_POST_SIM and transition
+ * to PHASE_PLAN_RED. No-op if not in PHASE_POST_SIM. */
+void             game_continue_to_next_turn(void);
 
 /* Creep upgrade catalog accessors. Per-player dynamic state (purchased /
  * completed / turns_remaining) lives on Player.creep_upgrades[idx]. */

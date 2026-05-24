@@ -955,7 +955,7 @@ void game_frame(void) {
     if (s.phase != PHASE_SIMULATE) return;
     if (s.sim_end_hold > 0) {
         s.sim_end_hold--;
-        if (s.sim_end_hold == 0) end_simulation();
+        if (s.sim_end_hold == 0) s.phase = PHASE_POST_SIM;
         return;
     }
     s.sim_frame_accum++;
@@ -965,6 +965,11 @@ void game_frame(void) {
     if (s.phase == PHASE_GAME_OVER) return;
     if (s.sim_tick >= SIM_TICKS_PER_TURN || !any_creeps_alive())
         s.sim_end_hold = 3 * SIM_FRAMES_PER_TICK;
+}
+
+void game_continue_to_next_turn(void) {
+    if (s.phase != PHASE_POST_SIM) return;
+    end_simulation();
 }
 
 /* ── Snapshot encode / decode ───────────────────────────── */
@@ -981,6 +986,12 @@ static char phase_to_char(Phase p) {
         case PHASE_PLAN_BLUE: return 'B';
         case PHASE_PRE_SIM:   return 'V';
         case PHASE_SIMULATE:  return 'S';
+        /* POST_SIM is intentionally not pushed to the URL — the snapshot
+         * sitting in the URL during POST_SIM is the PRE_SIM one from the
+         * pre-sim lock-in, which is exactly the hand-off Red needs. If an
+         * encode somehow fires here (e.g. test harness), fall back to 'V'
+         * so the format stays valid. */
+        case PHASE_POST_SIM:  return 'V';
         case PHASE_GAME_OVER: return 'O';
     }
     return 'R';

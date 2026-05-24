@@ -272,6 +272,33 @@ static void test_simulation_phase_no_buttons(void) {
     CHECK(!present(BTN_START_SIM_AS_BLUE));
 }
 
+/* POST_SIM is the hand-off gate after the sim parks. The Continue button
+ * must be hittable (so the viewer can release the screen to PLAN_RED), and
+ * no planning controls or PRE_SIM view buttons should leak in. */
+static void test_post_sim_shows_continue_button(void) {
+    g_test = "post_sim_shows_continue_button";
+    game_init_with_configs(TEST_TOWERS_CFG, TEST_CREEP_UPGRADES_CFG);
+    game_lock_in();                        /* → PLAN_BLUE */
+    game_lock_in();                        /* → PRE_SIM   */
+    game_choose_sim_view(PLAYER_BLUE);     /* → SIMULATE  */
+    /* Drive frames until the sim parks. */
+    for (int i = 0; i < SIM_TICKS_PER_TURN * SIM_FRAMES_PER_TICK + 200; i++) {
+        game_frame();
+        if (game_get_state()->phase == PHASE_POST_SIM) break;
+    }
+    CHECK(game_get_state()->phase == PHASE_POST_SIM);
+
+    render_frame(game_get_state());
+    scan_buttons();
+    CHECK(present(BTN_CONTINUE_TO_NEXT_TURN));
+    CHECK(!present(BTN_LOCK_IN));
+    CHECK(!present(BTN_START_SIM_AS_RED));
+    CHECK(!present(BTN_START_SIM_AS_BLUE));
+    for (int i = 0; i < game_tower_count(); i++)
+        CHECK(!present(BTN_PLACE_TOWER_BASE + i));
+    CHECK(!present(BTN_RESTART));
+}
+
 /* After BLUE locks in, the sim doesn't auto-start — instead the sidebar
  * offers a choice of whose vision to watch from. Both buttons are
  * hittable; planning controls are gone. */
@@ -422,12 +449,12 @@ static void test_stacked_creep_count_badge(void) {
     enter_sim_as(PLAYER_BLUE);
     for (int i = 0; i < SIM_TICKS_PER_TURN * SIM_FRAMES_PER_TICK + 200; i++) {
         game_frame();
-        if (game_get_state()->phase == PHASE_PLAN_RED) break;
+        if (game_get_state()->phase == PHASE_POST_SIM) { game_continue_to_next_turn(); break; }
     }
     enter_sim_as(PLAYER_BLUE);
     for (int i = 0; i < SIM_TICKS_PER_TURN * SIM_FRAMES_PER_TICK + 200; i++) {
         game_frame();
-        if (game_get_state()->phase == PHASE_PLAN_RED) break;
+        if (game_get_state()->phase == PHASE_POST_SIM) { game_continue_to_next_turn(); break; }
     }
     enter_sim_as(PLAYER_BLUE);     /* turn 3: retrievers spawn */
     /* Two ticks pops both retrievers off the spawn queue; they end up at
@@ -480,7 +507,7 @@ static void test_single_creep_no_badge(void) {
     enter_sim_as(PLAYER_BLUE);      /* SIMULATE turn 1 (no creeps yet) */
     for (int i = 0; i < SIM_TICKS_PER_TURN * SIM_FRAMES_PER_TICK + 200; i++) {
         game_frame();
-        if (game_get_state()->phase == PHASE_PLAN_RED) break;
+        if (game_get_state()->phase == PHASE_POST_SIM) { game_continue_to_next_turn(); break; }
     }
     enter_sim_as(PLAYER_BLUE);      /* SIMULATE turn 2: 1 retriever spawns */
 
@@ -509,7 +536,7 @@ static void test_game_over_shows_restart(void) {
     /* Drain turn 1 quietly. */
     for (int i = 0; i < SIM_TICKS_PER_TURN * SIM_FRAMES_PER_TICK + 200; i++) {
         game_frame();
-        if (game_get_state()->phase == PHASE_PLAN_RED) break;
+        if (game_get_state()->phase == PHASE_POST_SIM) { game_continue_to_next_turn(); break; }
     }
     enter_sim_as(PLAYER_RED);    /* SIMULATE turn 2 */
     /* Run until BLUE wins. */
@@ -537,6 +564,7 @@ int main(void) {
     test_selected_tower_shows_build_turns();
     test_enemy_tower_selected_no_upgrade_destroy();
     test_simulation_phase_no_buttons();
+    test_post_sim_shows_continue_button();
     test_pre_sim_offers_view_choice();
     test_pre_sim_hides_all_player_state();
     test_fog_hides_enemy_tower_glyph();

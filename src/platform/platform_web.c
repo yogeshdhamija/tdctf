@@ -209,6 +209,10 @@ void on_click(int px, int py) {
         case BTN_RESTART:            game_init();                           push_current_snapshot(); break;
         case BTN_START_SIM_AS_RED:   game_choose_sim_view(PLAYER_RED);                               break;
         case BTN_START_SIM_AS_BLUE:  game_choose_sim_view(PLAYER_BLUE);                              break;
+        /* Intentionally no push_current_snapshot: the URL must keep the
+         * PRE_SIM hand-off so Red can watch the sim from their perspective
+         * after Blue forwards the link. */
+        case BTN_CONTINUE_TO_NEXT_TURN: game_continue_to_next_turn();                                break;
         default: break;
     }
 }
