@@ -22,6 +22,12 @@ typedef enum {
 
 #define CELL_SIZE 32
 #define SIDEBAR_W 220
+/* Floor on the canvas (and sidebar) height so the sidebar's full button
+ * stack — tower palette, creep upgrades, selected-tower controls — never
+ * gets cut off when the map has few rows. Sized for the worst-case PLAN
+ * layout with the shipped catalogs (~660 px of content) plus headroom
+ * for the status-message overlay and frame-stats line at the bottom. */
+#define SIDEBAR_MIN_H 720
 
 void render_frame(const GameState *state);
 int  render_button_at(int px, int py); /* returns ButtonID or BTN_NONE */

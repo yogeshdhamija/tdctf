@@ -297,7 +297,10 @@ int main(void) {
     }
     const GameState *gs = game_get_state();
     int canvas_w = CELL_SIZE * gs->grid_w + SIDEBAR_W;
-    int canvas_h = CELL_SIZE * gs->grid_h;
+    int grid_h_px = CELL_SIZE * gs->grid_h;
+    /* Canvas is the taller of the grid and the sidebar's minimum height,
+     * so a short map doesn't clip the button stack on the right. */
+    int canvas_h = grid_h_px > SIDEBAR_MIN_H ? grid_h_px : SIDEBAR_MIN_H;
     last_time = emscripten_get_now();
     js_canvas_init(canvas_w, canvas_h);
     js_install_popstate();

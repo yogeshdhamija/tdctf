@@ -555,6 +555,50 @@ static void test_game_over_shows_restart(void) {
     CHECK(!present(BTN_UPGRADE_TOWER));
 }
 
+/* Short maps must not clip the sidebar's button stack: the canvas height
+ * is floored at SIDEBAR_MIN_H so every planning button stays on-screen.
+ * The corridor fixture is 5 rows (160 px tall) — well below the stack's
+ * natural height — so the sidebar background fill rect is the artifact
+ * we read: when the map is short, the fill must rise to SIDEBAR_MIN_H,
+ * not collapse to the grid's pixel height. We also assert that the
+ * bottom-most button (the selected-tower Destroy button — only present
+ * once a tower is selected) sits within that padded height. */
+static void test_short_map_sidebar_pads_to_min_height(void) {
+    g_test = "short_map_sidebar_pads_to_min_height";
+    game_init_with_configs_and_map(TEST_TOWERS_CFG, TEST_CREEP_UPGRADES_CFG, TEST_MAP_CORRIDOR_CFG);
+    /* Select a freshly placed tower so the sidebar grows to its tallest
+     * form (Upgrade/Destroy row at the bottom of the stack). */
+    game_set_placement(game_tower_id("GUNNER"));
+    game_grid_click(2, 2);
+
+    reset_fill_log();
+    render_frame(game_get_state());
+
+    int gw = game_get_state()->grid_w * CELL_SIZE;
+    /* Find the sidebar background fill: x=gw, y=0, w=SIDEBAR_W. Its
+     * height tells us the canvas's effective UI height. */
+    int sidebar_h = 0;
+    for (int i = 0; i < g_fill_call_count; i++) {
+        const FillCall *fc = &g_fill_calls[i];
+        if (fc->x == gw && fc->y == 0 && fc->w == SIDEBAR_W) {
+            sidebar_h = fc->h;
+            break;
+        }
+    }
+    CHECK(sidebar_h == SIDEBAR_MIN_H);
+
+    /* The Destroy button is the lowest in the stack when a tower is
+     * selected. Sweep the sidebar to find its highest hittable y, then
+     * check it sits inside the padded canvas. */
+    int destroy_max_y = -1;
+    for (int y = 0; y < SIDEBAR_MIN_H; y += 2)
+        for (int x = gw; x < gw + SIDEBAR_W; x += 4)
+            if (render_button_at(x, y) == BTN_DESTROY_TOWER)
+                if (y > destroy_max_y) destroy_max_y = y;
+    CHECK(destroy_max_y >= 0);
+    CHECK(destroy_max_y < SIDEBAR_MIN_H);
+}
+
 int main(void) {
     test_no_buttons_in_grid_area();
     test_planning_buttons_visible();
@@ -573,6 +617,7 @@ int main(void) {
     test_stacked_creep_count_badge();
     test_single_creep_no_badge();
     test_game_over_shows_restart();
+    test_short_map_sidebar_pads_to_min_height();
     printf("%d assertions, %d failures\n", g_assertions, g_fail);
     return g_fail ? 1 : 0;
 }

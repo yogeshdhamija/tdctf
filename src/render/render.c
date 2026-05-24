@@ -62,7 +62,10 @@ static void draw_button(int id, int x, int y, int w, int h,
 void render_frame(const GameState *gs) {
     g_btn_count = 0;
     int gw = gs->grid_w * CELL_SIZE;
-    int gh = gs->grid_h * CELL_SIZE;
+    int grid_pixel_h = gs->grid_h * CELL_SIZE;
+    /* Sidebar fills the canvas vertically. When the grid is short, the
+     * canvas is padded to SIDEBAR_MIN_H so the button stack still fits. */
+    int ui_h = grid_pixel_h > SIDEBAR_MIN_H ? grid_pixel_h : SIDEBAR_MIN_H;
     char buf[96];
 
     /* Viewer for fog-of-war filtering:
@@ -101,7 +104,7 @@ void render_frame(const GameState *gs) {
 
     /* Grid lines */
     for (int x = 0; x <= gs->grid_w; x++)
-        plat_draw_line(x * CELL_SIZE, 0, x * CELL_SIZE, gh, GRID_LINE);
+        plat_draw_line(x * CELL_SIZE, 0, x * CELL_SIZE, grid_pixel_h, GRID_LINE);
     for (int y = 0; y <= gs->grid_h; y++)
         plat_draw_line(0, y * CELL_SIZE, gw, y * CELL_SIZE, GRID_LINE);
 
@@ -317,8 +320,8 @@ void render_frame(const GameState *gs) {
 
     /* ── Sidebar ── */
     int sx = gw;
-    plat_fill_rect(sx, 0, SIDEBAR_W, gh, SIDEBAR_BG);
-    plat_draw_line(sx, 0, sx, gh, SIDEBAR_BORDER);
+    plat_fill_rect(sx, 0, SIDEBAR_W, ui_h, SIDEBAR_BG);
+    plat_draw_line(sx, 0, sx, ui_h, SIDEBAR_BORDER);
     int line = 12;
 
     snprintf(buf, sizeof(buf), "TURN %d", gs->turn);
@@ -482,13 +485,13 @@ void render_frame(const GameState *gs) {
     }
 
     if (gs->status_ttl > 0 && gs->status_msg[0]) {
-        plat_fill_rect(sx + 4, gh - 22, SIDEBAR_W - 8, 18, STATUS_MSG_BG);
-        plat_draw_text(sx + 10, gh - 50, gs->status_msg, STATUS_MSG_TEXT);
+        plat_fill_rect(sx + 4, ui_h - 22, SIDEBAR_W - 8, 18, STATUS_MSG_BG);
+        plat_draw_text(sx + 10, ui_h - 50, gs->status_msg, STATUS_MSG_TEXT);
     }
 
     /* Frame stats overlay */
     FrameStats fs;
     plat_get_frame_stats(&fs);
     snprintf(buf, sizeof(buf), "FPS:%.0f  MaxLag:%.0fms", fs.fps, fs.max_lag_ms);
-    plat_draw_text(gw + 10, gh - 16, buf, TEXT_FAINT);
+    plat_draw_text(gw + 10, ui_h - 16, buf, TEXT_FAINT);
 }
