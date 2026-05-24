@@ -210,14 +210,14 @@ void render_frame(const GameState *gs) {
         plat_draw_line(x1, y1, x2, y2, TOWER_BEAM);
     }
 
-    /* Creeps. Visual differentiation: any creep type with melee_damage > 0
-     * is rendered "heavy" (larger circle, dim color) — a generic stand-in
-     * for "fighter" creeps; everything else renders "light".
+    /* Creeps. Each creep is drawn as its catalog `code` letter — type-at-a-
+     * glance instead of an undifferentiated dot. Heavy creeps (melee_damage > 0)
+     * still get the dim color shade.
      *
      * Fog filter: own creeps always shown; enemy creeps only if their cell
      * is in vis_now. Creeps that the viewer once saw but are now out of
-     * vision (or dead) are drawn from creep_mem[i] as hollow "corpse"
-     * markers — that's the inspectable-corpse feature from §6. */
+     * vision (or dead) are drawn from creep_mem[i] as dim letters — that's
+     * the inspectable-corpse feature from §6. */
     static int creep_cnt[MAX_GRID_W][MAX_GRID_H][2][CREEP_TYPE_MAX_COUNT];
     memset(creep_cnt, 0, sizeof(creep_cnt));
     for (int i = 0; i < gs->thing_count; i++) {
@@ -230,23 +230,23 @@ void render_frame(const GameState *gs) {
         uint32_t col = heavy ? player_color_dim(t->owner) : player_color(t->owner);
         int cx = t->x * CELL_SIZE + CELL_SIZE/2;
         int cy = t->y * CELL_SIZE + CELL_SIZE/2;
-        int r  = heavy ? 7 : 5;
-        plat_fill_circle(cx, cy, r, col);
+        char glyph[2] = { game_creep_active_code(t->owner, t->creep.type), 0 };
+        plat_draw_text(cx - 4, cy - 7, glyph, col);
         if (t->creep.slow_ticks > 0)
-            plat_draw_circle(cx, cy, r + 2, CREEP_SLOW_HALO);
+            plat_draw_circle(cx, cy, 9, CREEP_SLOW_HALO);
         if (t->creep.has_flag) {
             PlayerID flag_owner = (t->owner == PLAYER_RED) ? PLAYER_BLUE : PLAYER_RED;
             uint32_t fcol = player_color(flag_owner);
-            plat_draw_line(cx - 7, cy - 12, cx - 7, cy + 2, fcol);
-            plat_draw_triangle(cx - 7, cy - 12, cx + 3, cy - 9, cx - 7, cy - 6, fcol);
+            plat_draw_line(cx - 9, cy - 12, cx - 9, cy + 2, fcol);
+            plat_draw_triangle(cx - 9, cy - 12, cx + 1, cy - 9, cx - 9, cy - 6, fcol);
         }
     }
 
     /* Corpses: every creep_mem entry whose live thing isn't currently
-     * drawn above gets a hollow-circle marker at its remembered cell.
-     * Covers both "creep moved out of vision" mid-sim and "creep died"
-     * post-sim — start_simulation wipes creep_mem so this only shows
-     * memories from the current round. */
+     * drawn above gets a dim letter at its remembered cell. Covers both
+     * "creep moved out of vision" mid-sim and "creep died" post-sim —
+     * start_simulation wipes creep_mem so this only shows memories from
+     * the current round. */
     for (int i = 0; i < MAX_THINGS; i++) {
         const FogCreepMemory *cm = &gs->views[g_viewer].creep_mem[i];
         if (!cm->valid) continue;
@@ -257,7 +257,8 @@ void render_frame(const GameState *gs) {
         if (live_visible) continue;
         int cx = cm->x * CELL_SIZE + CELL_SIZE/2;
         int cy = cm->y * CELL_SIZE + CELL_SIZE/2;
-        plat_draw_circle(cx, cy, 5, player_color_dim((PlayerID)cm->owner));
+        char glyph[2] = { game_creep_active_code((PlayerID)cm->owner, (CreepType)cm->type), 0 };
+        plat_draw_text(cx - 4, cy - 7, glyph, player_color_dim((PlayerID)cm->owner));
     }
 
     /* Per-cell crowding badge: when more than one creep shares a cell the
