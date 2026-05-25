@@ -189,8 +189,11 @@ void on_click(int px, int py) {
     const GameState *gs = game_get_state();
     int gw = CELL_SIZE * gs->grid_w;
     if (px < gw) {
+        /* Clicks in the dedicated banner row above the grid are ignored —
+         * only real grid rows dispatch to game_grid_click. */
+        if (py < BANNER_H) return;
         if (gs->phase == PHASE_PLAN_RED || gs->phase == PHASE_PLAN_BLUE)
-            game_grid_click(px / CELL_SIZE, py / CELL_SIZE);
+            game_grid_click(px / CELL_SIZE, (py - BANNER_H) / CELL_SIZE);
         return;
     }
     int btn = render_button_at(px, py);
@@ -297,9 +300,10 @@ int main(void) {
     }
     const GameState *gs = game_get_state();
     int canvas_w = CELL_SIZE * gs->grid_w + SIDEBAR_W;
-    int grid_h_px = CELL_SIZE * gs->grid_h;
-    /* Canvas is the taller of the grid and the sidebar's minimum height,
-     * so a short map doesn't clip the button stack on the right. */
+    int grid_h_px = BANNER_H + CELL_SIZE * gs->grid_h;
+    /* Canvas is the taller of the grid (plus its banner row) and the
+     * sidebar's minimum height, so a short map doesn't clip the button
+     * stack on the right. */
     int canvas_h = grid_h_px > SIDEBAR_MIN_H ? grid_h_px : SIDEBAR_MIN_H;
     last_time = emscripten_get_now();
     js_canvas_init(canvas_w, canvas_h);

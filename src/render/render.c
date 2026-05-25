@@ -63,9 +63,12 @@ void render_frame(const GameState *gs) {
     g_btn_count = 0;
     int gw = gs->grid_w * CELL_SIZE;
     int grid_pixel_h = gs->grid_h * CELL_SIZE;
+    /* Grid is offset down by BANNER_H so the placement-intent banner has its
+     * own row at the top of the canvas instead of overlapping row 0. */
+    int grid_block_h = BANNER_H + grid_pixel_h;
     /* Sidebar fills the canvas vertically. When the grid is short, the
      * canvas is padded to SIDEBAR_MIN_H so the button stack still fits. */
-    int ui_h = grid_pixel_h > SIDEBAR_MIN_H ? grid_pixel_h : SIDEBAR_MIN_H;
+    int ui_h = grid_block_h > SIDEBAR_MIN_H ? grid_block_h : SIDEBAR_MIN_H;
     char buf[96];
 
     /* Viewer for fog-of-war filtering:
@@ -98,21 +101,21 @@ void render_frame(const GameState *gs) {
     for (int x = 0; x < gs->grid_w; x++)
         for (int y = 0; y < gs->grid_h; y++) {
             int live = viewer_committed && viewer_can_see(gs, x, y);
-            plat_fill_rect(x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE,
+            plat_fill_rect(x * CELL_SIZE, BANNER_H + y * CELL_SIZE, CELL_SIZE, CELL_SIZE,
                            zone_color(gs->grid[x][y].zone, live));
         }
 
     /* Grid lines */
     for (int x = 0; x <= gs->grid_w; x++)
-        plat_draw_line(x * CELL_SIZE, 0, x * CELL_SIZE, grid_pixel_h, GRID_LINE);
+        plat_draw_line(x * CELL_SIZE, BANNER_H, x * CELL_SIZE, BANNER_H + grid_pixel_h, GRID_LINE);
     for (int y = 0; y <= gs->grid_h; y++)
-        plat_draw_line(0, y * CELL_SIZE, gw, y * CELL_SIZE, GRID_LINE);
+        plat_draw_line(0, BANNER_H + y * CELL_SIZE, gw, BANNER_H + y * CELL_SIZE, GRID_LINE);
 
     if (!hide_players) {
     /* Receptacles */
     for (int p = 0; p < 2; p++) {
         int rx = gs->receptacle_x[p] * CELL_SIZE;
-        int ry = gs->receptacle_y[p] * CELL_SIZE;
+        int ry = BANNER_H + gs->receptacle_y[p] * CELL_SIZE;
         plat_draw_rect(rx + 2, ry + 2, CELL_SIZE - 4, CELL_SIZE - 4, player_color((PlayerID)p));
         plat_draw_rect(rx + 5, ry + 5, CELL_SIZE - 10, CELL_SIZE - 10, player_color((PlayerID)p));
     }
@@ -121,7 +124,7 @@ void render_frame(const GameState *gs) {
      * visually paired with the nested-rectangle receptacle marker. */
     for (int p = 0; p < 2; p++) {
         int cx = gs->spawn_x[p] * CELL_SIZE + CELL_SIZE / 2;
-        int cy = gs->spawn_y[p] * CELL_SIZE + CELL_SIZE / 2;
+        int cy = BANNER_H + gs->spawn_y[p] * CELL_SIZE + CELL_SIZE / 2;
         uint32_t col = player_color((PlayerID)p);
         plat_draw_circle(cx, cy, CELL_SIZE / 2 - 2, col);
         plat_draw_circle(cx, cy, CELL_SIZE / 2 - 5, col);
@@ -133,7 +136,7 @@ void render_frame(const GameState *gs) {
         if (f->carried_by != -1) continue;
         uint32_t col = player_color(f->owner);
         int fx = f->x * CELL_SIZE + 6;
-        int fy = f->y * CELL_SIZE + 4;
+        int fy = BANNER_H + f->y * CELL_SIZE + 4;
         plat_draw_line(fx, fy, fx, fy + 24, col);
         plat_draw_triangle(fx, fy, fx + 16, fy + 6, fx, fy + 12, col);
     }
@@ -154,7 +157,7 @@ void render_frame(const GameState *gs) {
             int has_live = (id >= 0 && gs->things[id].tag == THING_TOWER && gs->things[id].alive);
             int visible = viewer_can_see(gs, x, y);
             const FogTowerMemory *m = &gs->views[g_viewer].mem[x][y];
-            int px = x * CELL_SIZE, py = y * CELL_SIZE;
+            int px = x * CELL_SIZE, py = BANNER_H + y * CELL_SIZE;
 
             if (has_live) {
                 const Thing *t = &gs->things[id];
@@ -207,9 +210,9 @@ void render_frame(const GameState *gs) {
         if (t->beam_ttl <= 0) continue;
         if (t->owner != g_viewer && !viewer_can_see(gs, t->x, t->y)) continue;
         int x1 = t->x * CELL_SIZE + CELL_SIZE/2;
-        int y1 = t->y * CELL_SIZE + CELL_SIZE/2;
+        int y1 = BANNER_H + t->y * CELL_SIZE + CELL_SIZE/2;
         int x2 = t->last_target_x * CELL_SIZE + CELL_SIZE/2;
-        int y2 = t->last_target_y * CELL_SIZE + CELL_SIZE/2;
+        int y2 = BANNER_H + t->last_target_y * CELL_SIZE + CELL_SIZE/2;
         plat_draw_line(x1, y1, x2, y2, TOWER_BEAM);
     }
 
@@ -232,7 +235,7 @@ void render_frame(const GameState *gs) {
         int heavy = game_creep_active_melee_damage(t->owner, t->creep.type) > 0;
         uint32_t col = heavy ? player_color_dim(t->owner) : player_color(t->owner);
         int cx = t->x * CELL_SIZE + CELL_SIZE/2;
-        int cy = t->y * CELL_SIZE + CELL_SIZE/2;
+        int cy = BANNER_H + t->y * CELL_SIZE + CELL_SIZE/2;
         char glyph[2] = { game_creep_active_code(t->owner, t->creep.type), 0 };
         plat_draw_text(cx - 4, cy - 7, glyph, col);
         if (t->creep.slow_ticks > 0)
@@ -259,7 +262,7 @@ void render_frame(const GameState *gs) {
                             viewer_can_see(gs, t->x, t->y));
         if (live_visible) continue;
         int cx = cm->x * CELL_SIZE + CELL_SIZE/2;
-        int cy = cm->y * CELL_SIZE + CELL_SIZE/2;
+        int cy = BANNER_H + cm->y * CELL_SIZE + CELL_SIZE/2;
         char glyph[2] = { game_creep_active_code((PlayerID)cm->owner, (CreepType)cm->type), 0 };
         plat_draw_text(cx - 4, cy - 7, glyph, player_color_dim((PlayerID)cm->owner));
     }
@@ -276,7 +279,7 @@ void render_frame(const GameState *gs) {
                 for (int ct = 0; ct < type_count; ct++)
                     total += creep_cnt[x][y][p][ct];
             if (total < 2) continue;
-            int by = y * CELL_SIZE + 1;
+            int by = BANNER_H + y * CELL_SIZE + 1;
             for (int p = 0; p < 2; p++) {
                 int per_player = 0;
                 for (int ct = 0; ct < type_count; ct++) per_player += creep_cnt[x][y][p][ct];
@@ -305,17 +308,18 @@ void render_frame(const GameState *gs) {
 
     /* Selection highlight */
     if (gs->selected_x >= 0 && gs->selected_y >= 0) {
-        plat_draw_rect(gs->selected_x * CELL_SIZE + 1, gs->selected_y * CELL_SIZE + 1,
+        plat_draw_rect(gs->selected_x * CELL_SIZE + 1, BANNER_H + gs->selected_y * CELL_SIZE + 1,
                        CELL_SIZE - 2, CELL_SIZE - 2, SELECTION_HIGHLIGHT);
     }
     } /* end if (!hide_players) */
 
-    /* Placement-intent hint banner */
+    /* Placement-intent hint banner — fills the dedicated BANNER_H row above
+     * the grid when a tower is queued for placement. */
     if (gs->placement_intent >= 0 && (gs->phase == PHASE_PLAN_RED || gs->phase == PHASE_PLAN_BLUE)) {
-        plat_fill_rect(0, 0, gw, 18, PLACEMENT_BANNER_BG);
+        plat_fill_rect(0, 0, gw, BANNER_H, PLACEMENT_BANNER_BG);
         snprintf(buf, sizeof(buf), "Click grid to place %s  (click button again to cancel)",
                  game_tower_name(gs->placement_intent));
-        plat_draw_text(6, 2, buf, PLACEMENT_BANNER_TEXT);
+        plat_draw_text(6, 3, buf, PLACEMENT_BANNER_TEXT);
     }
 
     /* ── Sidebar ── */

@@ -374,7 +374,7 @@ static void test_fog_hides_enemy_tower_glyph(void) {
     render_frame(game_get_state());
     int gw = 30 * CELL_SIZE;
     int x_lo = 3 * CELL_SIZE, x_hi = x_lo + CELL_SIZE;
-    int y_lo = 4 * CELL_SIZE, y_hi = y_lo + CELL_SIZE;
+    int y_lo = BANNER_H + 4 * CELL_SIZE, y_hi = y_lo + CELL_SIZE;
     for (int i = 0; i < g_text_call_count; i++) {
         const TextCall *tc = &g_text_calls[i];
         if (tc->x >= gw) continue; /* sidebar */
@@ -403,9 +403,9 @@ static void test_fog_dims_grid_outside_vision(void) {
     reset_fill_log();
     render_frame(game_get_state());
 
-    uint32_t tower_cell    = fill_color_at(3 * CELL_SIZE, 4 * CELL_SIZE, CELL_SIZE, CELL_SIZE);
-    uint32_t in_vision     = fill_color_at(5 * CELL_SIZE, 4 * CELL_SIZE, CELL_SIZE, CELL_SIZE);
-    uint32_t out_of_vision = fill_color_at(9 * CELL_SIZE, 4 * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+    uint32_t tower_cell    = fill_color_at(3 * CELL_SIZE, BANNER_H + 4 * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+    uint32_t in_vision     = fill_color_at(5 * CELL_SIZE, BANNER_H + 4 * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+    uint32_t out_of_vision = fill_color_at(9 * CELL_SIZE, BANNER_H + 4 * CELL_SIZE, CELL_SIZE, CELL_SIZE);
     CHECK(tower_cell    == ZONE_RED_BG_LIVE);
     CHECK(in_vision     == ZONE_RED_BG_LIVE);
     CHECK(out_of_vision == ZONE_RED_BG_FOG_OF_WAR);
@@ -481,7 +481,7 @@ static void test_stacked_creep_count_badge(void) {
     reset_text_log();
     render_frame(s);
     int x_lo = crowd_x * CELL_SIZE, x_hi = x_lo + CELL_SIZE;
-    int y_lo = crowd_y * CELL_SIZE, y_hi = y_lo + CELL_SIZE;
+    int y_lo = BANNER_H + crowd_y * CELL_SIZE, y_hi = y_lo + CELL_SIZE;
     const TextCall *badge = NULL;
     for (int i = 0; i < g_text_call_count; i++) {
         const TextCall *tc = &g_text_calls[i];
@@ -555,6 +555,38 @@ static void test_game_over_shows_restart(void) {
     CHECK(!present(BTN_UPGRADE_TOWER));
 }
 
+/* The placement-intent banner has its own dedicated row above the grid —
+ * it never overlaps the first row of cells. Verifies that when a tower
+ * is queued for placement, the banner fill spans (0, 0, gw, BANNER_H)
+ * and grid cells start painting at y=BANNER_H rather than y=0. */
+static void test_placement_banner_above_grid(void) {
+    g_test = "placement_banner_above_grid";
+    game_init_with_configs_and_map(TEST_TOWERS_CFG, TEST_CREEP_UPGRADES_CFG, TEST_MAP_CFG);
+    game_set_placement(game_tower_id("GUNNER"));
+
+    reset_fill_log();
+    render_frame(game_get_state());
+
+    int gw = game_get_state()->grid_w * CELL_SIZE;
+    int found_banner = 0;
+    int cell_in_banner_row = 0;
+    int cell_in_first_row_below = 0;
+    for (int i = 0; i < g_fill_call_count; i++) {
+        const FillCall *fc = &g_fill_calls[i];
+        if (fc->x == 0 && fc->y == 0 && fc->w == gw && fc->h == BANNER_H)
+            found_banner = 1;
+        /* A grid-cell-sized fill at y=0 would mean a grid row landed inside
+         * the banner area — exactly the bug we're guarding against. */
+        if (fc->y == 0 && fc->w == CELL_SIZE && fc->h == CELL_SIZE)
+            cell_in_banner_row = 1;
+        if (fc->y == BANNER_H && fc->w == CELL_SIZE && fc->h == CELL_SIZE)
+            cell_in_first_row_below = 1;
+    }
+    CHECK(found_banner);
+    CHECK(!cell_in_banner_row);
+    CHECK(cell_in_first_row_below);
+}
+
 /* Short maps must not clip the sidebar's button stack: the canvas height
  * is floored at SIDEBAR_MIN_H so every planning button stays on-screen.
  * The corridor fixture is 5 rows (160 px tall) — well below the stack's
@@ -617,6 +649,7 @@ int main(void) {
     test_stacked_creep_count_badge();
     test_single_creep_no_badge();
     test_game_over_shows_restart();
+    test_placement_banner_above_grid();
     test_short_map_sidebar_pads_to_min_height();
     printf("%d assertions, %d failures\n", g_assertions, g_fail);
     return g_fail ? 1 : 0;

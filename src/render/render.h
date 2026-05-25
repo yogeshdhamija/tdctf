@@ -22,6 +22,9 @@ typedef enum {
 
 #define CELL_SIZE 32
 #define SIDEBAR_W 220
+/* Reserved row above the grid for the placement-intent banner. The grid is
+ * shifted down by this amount so the banner never overlaps the first row. */
+#define BANNER_H 20
 /* Floor on the canvas (and sidebar) height so the sidebar's full button
  * stack — tower palette, creep upgrades, selected-tower controls — never
  * gets cut off when the map has few rows. Sized for the worst-case PLAN
