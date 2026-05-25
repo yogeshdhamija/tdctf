@@ -203,7 +203,7 @@ static void test_buy_upgrade_button_disappears_after_purchase(void) {
  * buttons. */
 static void test_own_tower_selected_shows_upgrade_destroy(void) {
     g_test = "own_tower_selected_shows_upgrade_destroy";
-    game_init_with_configs(TEST_TOWERS_CFG, TEST_CREEP_UPGRADES_CFG);
+    game_init_with_configs_and_map(TEST_TOWERS_CFG, TEST_CREEP_UPGRADES_CFG, TEST_MAP_CFG);
     /* Place a RED gunner — placement also sets selected_x/y to the new tower. */
     game_set_placement(game_tower_id("GUNNER"));
     game_grid_click(6, 4);
@@ -220,7 +220,7 @@ static void test_own_tower_selected_shows_upgrade_destroy(void) {
  * which leaves it selected and still building on this turn. */
 static void test_selected_tower_shows_build_turns(void) {
     g_test = "selected_tower_shows_build_turns";
-    game_init_with_configs(TEST_TOWERS_CFG, TEST_CREEP_UPGRADES_CFG);
+    game_init_with_configs_and_map(TEST_TOWERS_CFG, TEST_CREEP_UPGRADES_CFG, TEST_MAP_CFG);
     game_set_placement(game_tower_id("SLAMMER"));
     game_grid_click(6, 4);
 
